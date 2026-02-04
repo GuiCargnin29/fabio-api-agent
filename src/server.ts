@@ -77,8 +77,16 @@ fastify.post<{ Body: RunBody }>("/run", async (request, reply) => {
     return;
   }
 
-  const result = await runWorkflow(parsed.data);
-  reply.send(result);
+  try {
+    const result = await runWorkflow(parsed.data);
+    reply.send(result);
+  } catch (err: any) {
+    request.log.error({ err }, "runWorkflow failed");
+    reply.status(500).send({
+      error: "workflow_error",
+      message: err?.message ?? "Unexpected error"
+    });
+  }
 });
 
 const start = async () => {

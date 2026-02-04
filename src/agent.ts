@@ -19,7 +19,7 @@ const webSearchPreview = webSearchTool({
 })
 
 // Shared client for guardrails and file search
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, timeout: 120000 });
 
 // Guardrails definitions
 const guardrailsConfig = {
