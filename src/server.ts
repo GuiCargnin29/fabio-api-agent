@@ -5,6 +5,7 @@ import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
 import { z } from "zod";
 import { runWorkflow } from "./agent.js";
+import { randomUUID } from "node:crypto";
 
 const envSchema = z.object({
   OPENAI_API_KEY: z.string().min(1, "OPENAI_API_KEY is required"),
@@ -60,6 +61,41 @@ fastify.get("/health", async () => {
   };
 });
 
+type JobStatus = "queued" | "running" | "done" | "error";
+type JobRecord = {
+  id: string;
+  status: JobStatus;
+  created_at: string;
+  updated_at: string;
+  result?: unknown;
+  error?: string;
+};
+
+const jobs = new Map<string, JobRecord>();
+
+function updateJob(id: string, patch: Partial<JobRecord>) {
+  const current = jobs.get(id);
+  if (!current) return;
+  jobs.set(id, {
+    ...current,
+    ...patch,
+    updated_at: new Date().toISOString()
+  });
+}
+
+async function runJob(id: string, input: RunBody) {
+  updateJob(id, { status: "running" });
+  try {
+    const result = await runWorkflow(input);
+    updateJob(id, { status: "done", result });
+  } catch (err: any) {
+    updateJob(id, {
+      status: "error",
+      error: err?.message ?? "Unexpected error"
+    });
+  }
+}
+
 fastify.post<{ Body: RunBody }>("/run", async (request, reply) => {
   const apiKey = request.headers["x-api-key"] as string | undefined;
   if (!requireApiKey(apiKey)) {
@@ -87,6 +123,55 @@ fastify.post<{ Body: RunBody }>("/run", async (request, reply) => {
       message: err?.message ?? "Unexpected error"
     });
   }
+});
+
+fastify.post<{ Body: RunBody }>("/run-async", async (request, reply) => {
+  const apiKey = request.headers["x-api-key"] as string | undefined;
+  if (!requireApiKey(apiKey)) {
+    reply.status(401).send({ error: "unauthorized", message: "Invalid API key" });
+    return;
+  }
+
+  const parsed = runSchema.safeParse(request.body);
+  if (!parsed.success) {
+    reply.status(400).send({
+      error: "validation_error",
+      message: "Invalid request body",
+      issues: parsed.error.flatten()
+    });
+    return;
+  }
+
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  jobs.set(id, {
+    id,
+    status: "queued",
+    created_at: now,
+    updated_at: now
+  });
+
+  setImmediate(() => {
+    void runJob(id, parsed.data);
+  });
+
+  reply.send({ job_id: id, status: "queued" });
+});
+
+fastify.get<{ Params: { id: string } }>("/jobs/:id", async (request, reply) => {
+  const apiKey = request.headers["x-api-key"] as string | undefined;
+  if (!requireApiKey(apiKey)) {
+    reply.status(401).send({ error: "unauthorized", message: "Invalid API key" });
+    return;
+  }
+
+  const job = jobs.get(request.params.id);
+  if (!job) {
+    reply.status(404).send({ error: "not_found", message: "Job not found" });
+    return;
+  }
+
+  reply.send(job);
 });
 
 const start = async () => {
