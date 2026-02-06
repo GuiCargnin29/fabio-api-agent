@@ -1144,7 +1144,7 @@ const contestaOPrepararBuscaQueryPack = new Agent({
 Você deve usar SOMENTE as informações já coletadas no intake da CONTESTAÇÃO.
 
 ## OBJETIVO
-Gerar um pacote de busca (JSON no schema `contestacao_query_pack`) para File Search, com foco em encontrar peças MUITO semelhantes ao caso:
+Gerar um pacote de busca (JSON no schema \`contestacao_query_pack\`) para File Search, com foco em encontrar peças MUITO semelhantes ao caso:
 - mesma ação previdenciária (concessão, revisão, restabelecimento, etc.)
 - mesmo benefício (aposentadoria especial, por idade, por invalidez, BPC/LOAS, auxílio-doença, etc.)
 - mesmas preliminares (prescrição, ilegitimidade, incompetência, ausência de interesse, decadência quando aplicável, etc.)
@@ -1152,7 +1152,7 @@ Gerar um pacote de busca (JSON no schema `contestacao_query_pack`) para File Sea
 - mesma jurisdição/foro (se houver)
 
 ## REGRAS GERAIS
-1) Não responda ao usuário. Retorne APENAS o JSON do schema `contestacao_query_pack`.
+1) Não responda ao usuário. Retorne APENAS o JSON do schema \`contestacao_query_pack\`.
 2) Não invente fatos, datas, benefício, pedidos, preliminares ou documentos.
 3) Seja extremamente específico: o objetivo é encontrar contestação quase idêntica, não material genérico.
 4) Use linguagem e termos que advogados usam para buscar em acervo: “contestação”, “preliminar”, “mérito”, “improcedência”, “extinção sem resolução do mérito”, “INSS”, “RGPS”, etc.
@@ -1170,28 +1170,28 @@ B) Polo passivo:
 
 Fora dessas duas inferências, NÃO inferir.
 
-## JURISDIÇÃO (CAMPO `jurisdicao`)
+## JURISDIÇÃO (CAMPO \`jurisdicao\`)
 - Se houver cidade/UF e órgão (ex.: “Porto Alegre/RS”, “JEF”, “Vara Federal”), use isso.
 - Se não houver, use \"Brasil\" (não inventar).
 - Se houver só UF, use \"UF: <UF> (Brasil)\".
 
-## RAMO DO DIREITO (CAMPO `ramo_direito`)
+## RAMO DO DIREITO (CAMPO \`ramo_direito\`)
 - Use valores curtos e consistentes. Para este escritório:
   - \"previdenciario\"
 
-## TIPO DE AÇÃO (CAMPO `tipo_acao`)
+## TIPO DE AÇÃO (CAMPO \`tipo_acao\`)
 - Extraia do intake o tipo de ação proposta pelo autor (ou o objetivo):
   Ex.: \"acao_de_concessao_aposentadoria_especial\", \"acao_de_revisao_beneficio\", \"acao_de_restabelecimento_auxilio_doenca\".
 - Se o intake estiver vago, use um tipo genérico coerente (sem inventar detalhes):
   - \"acao_previdenciaria_generica_inss\"
 
-## PEDIDO PRINCIPAL (CAMPO `pedido_principal`)
+## PEDIDO PRINCIPAL (CAMPO \`pedido_principal\`)
 - Deve refletir o objetivo da defesa, de forma técnica e curta:
   - \"improcedencia_total\"
   - \"extincao_sem_merito\"
   - \"parcial_procedencia_com_limites\" (somente se isso vier do intake)
 
-## PEDIDOS ACESSÓRIOS (CAMPO `pedidos_acessorios`)
+## PEDIDOS ACESSÓRIOS (CAMPO \`pedidos_acessorios\`)
 Inclua somente se estiverem plausíveis e compatíveis com contestação previdenciária, e se o intake apontar/permitir:
 - \"condenacao_em_custas_e_honorarios\"
 - \"aplicacao_prescricao_quinquenal\" (quando relevante)
@@ -1199,12 +1199,12 @@ Inclua somente se estiverem plausíveis e compatíveis com contestação previde
 Se não houver base, deixe [].
 
 ## TERMOS PRINCIPAIS vs SECUNDÁRIOS
-- `termos_principais`: o “núcleo duro” que define o caso (máximo 8–12 itens).
+- \`termos_principais\`: o “núcleo duro” que define o caso (máximo 8–12 itens).
   Deve incluir: \"contestacao\", \"inss\", benefício/ação, preliminar principal (se houver), e tese de mérito central (se houver).
-- `termos_secundarios`: detalhes úteis para refinar (máximo 10–16 itens).
+- \`termos_secundarios\`: detalhes úteis para refinar (máximo 10–16 itens).
   Ex.: \"PPP\", \"LTCAT\", \"carencia\", \"qualidade_de_segurado\", \"DER\", \"DIB\", \"tempo_especial\", \"ruido\", \"agentes_nocivos\", \"periodo_rural\", \"CNIS\", \"CTPS\".
 
-## EXCLUIR TERMOS (CAMPO `excluir_termos`)
+## EXCLUIR TERMOS (CAMPO \`excluir_termos\`)
 Inclua termos que puxam material fora do foco:
 - \"trabalhista\"
 - \"civel\"
@@ -1214,15 +1214,15 @@ Inclua termos que puxam material fora do foco:
 - \"consumidor\"
 E quaisquer temas explicitamente incompatíveis com o caso do intake.
 
-## CONSULTA PRONTA (CAMPO `consulta_pronta`)
+## CONSULTA PRONTA (CAMPO \`consulta_pronta\`)
 - Deve combinar termos_principais + termos_secundarios em uma string “buscável”.
 - Use aspas para frases e sinal de menos para excluir.
 - Inclua sinônimos entre parênteses quando útil:
-  Ex.: `\"contestação\" INSS \"aposentadoria especial\" (tempo especial OR PPP OR LTCAT) -trabalhista -familia`
+  Ex.: \`\"contestação\" INSS \"aposentadoria especial\" (tempo especial OR PPP OR LTCAT) -trabalhista -familia\`
 - Não exagere nos operadores: mantenha legível, como busca real de advogado.
 
 ## SAÍDA
-Retorne APENAS um JSON válido conforme o schema `contestacao_query_pack`.
+Retorne APENAS um JSON válido conforme o schema \`contestacao_query_pack\`.
 Nenhum texto fora do JSON.`,
   model: "gpt-4.1",
   outputType: ContestaOPrepararBuscaQueryPackSchema,
@@ -3907,10 +3907,10 @@ Gerar termos e uma **consulta pronta** para File Search, com foco em encontrar p
 ## REGRAS GERAIS
 - **Não responda ao usuário.** Apenas gere o JSON no schema.
 - Seja **extremamente específico** e **orientado a similaridade**.
-- Se a jurisdição/tribunal não estiver explícita, use `\"Brasil\"` (e não invente TRF específico).
-- Em `ramo_direito`, **fixe** como `\"previdenciario\"` (ou equivalente).
-- Em `tipo_acao`, infira a ação originária **somente** a partir do intake.
-- Em `excluir_termos`, inclua temas claramente fora do escopo previdenciário (ex.: trabalhista, família, penal, consumidor, bancário, execução fiscal, etc.).
+- Se a jurisdição/tribunal não estiver explícita, use \`\"Brasil\"\` (e não invente TRF específico).
+- Em \`ramo_direito\`, **fixe** como \`\"previdenciario\"\` (ou equivalente).
+- Em \`tipo_acao\`, infira a ação originária **somente** a partir do intake.
+- Em \`excluir_termos\`, inclua temas claramente fora do escopo previdenciário (ex.: trabalhista, família, penal, consumidor, bancário, execução fiscal, etc.).
 - **Não invente fatos**: apenas reflita o que existe no intake.
 
 ---
@@ -3919,53 +3919,53 @@ Gerar termos e uma **consulta pronta** para File Search, com foco em encontrar p
 Inclua termos que capturem:
 
 ### (1) Tipo de recurso do adversário
-Ex.: `\"apelação\"`, `\"agravo de instrumento\"`, `\"embargos de declaração\"`, `\"recurso inominado\"`, `\"agravo interno\"`.
+Ex.: \`\"apelação\"\`, \`\"agravo de instrumento\"\`, \`\"embargos de declaração\"\`, \`\"recurso inominado\"\`, \`\"agravo interno\"\`.
 
 ### (2) Ação originária + benefício/matéria previdenciária
-Ex.: `\"concessão de aposentadoria especial\"`, `\"revisão de benefício\"`, `\"BPC LOAS\"`, `\"auxílio-doença\"`, `\"aposentadoria por idade rural\"`, `\"tempo especial PPP LTCAT\"`.
+Ex.: \`\"concessão de aposentadoria especial\"\`, \`\"revisão de benefício\"\`, \`\"BPC LOAS\"\`, \`\"auxílio-doença\"\`, \`\"aposentadoria por idade rural\"\`, \`\"tempo especial PPP LTCAT\"\`.
 
 ### (3) Fundamentos do recorrente que serão combatidos
-Ex.: `\"cerceamento de defesa\"`, `\"nulidade\"`, `\"ausência de prova\"`, `\"erro de direito\"`, `\"má valoração da prova\"`, `\"prescrição/decadência\"`, `\"inovação recursal\"`, `\"ausência de dialeticidade\"`, `\"omissão/contradição/obscuridade\"`.
+Ex.: \`\"cerceamento de defesa\"\`, \`\"nulidade\"\`, \`\"ausência de prova\"\`, \`\"erro de direito\"\`, \`\"má valoração da prova\"\`, \`\"prescrição/decadência\"\`, \`\"inovação recursal\"\`, \`\"ausência de dialeticidade\"\`, \`\"omissão/contradição/obscuridade\"\`.
 
 ### (4) Pontos atacados (o que querem reformar/anular/integrar)
-Ex.: `\"reconhecimento de tempo especial\"`, `\"validação de PPP\"`, `\"conversão de tempo especial\"`, `\"fixação de DIB/DER\"`, `\"tutela\"`, `\"honorários\"`, `\"correção/juros\"`, `\"implantação do benefício\"`.
+Ex.: \`\"reconhecimento de tempo especial\"\`, \`\"validação de PPP\"\`, \`\"conversão de tempo especial\"\`, \`\"fixação de DIB/DER\"\`, \`\"tutela\"\`, \`\"honorários\"\`, \`\"correção/juros\"\`, \`\"implantação do benefício\"\`.
 
 ### (5) Resultado defensivo pretendido
-Ex.: `\"não conhecimento\"`, `\"desprovimento\"`, `\"manutenção da sentença\"`, `\"manutenção do acórdão\"`, `\"negado provimento\"`.
+Ex.: \`\"não conhecimento\"\`, \`\"desprovimento\"\`, \`\"manutenção da sentença\"\`, \`\"manutenção do acórdão\"\`, \`\"negado provimento\"\`.
 
 ---
 
 ## JURISPRUDÊNCIA/DECISÕES (SE APLICÁVEL)
 Se o intake indicar que o usuário quer citar jurisprudência/decisões:
 - Inclua termos que puxem **precedentes recentes** (janela sugerida: **últimos 24 meses**).
-- Use termos como: `\"acórdão\"`, `\"ementa\"`, `\"precedente\"`, `\"tema\"`, `\"repetitivo\"`, `\"TRF\"`, `\"Turma Recursal\"`, `\"STJ\"`, `\"STF\"`, **somente** se fizer sentido no intake.
+- Use termos como: \`\"acórdão\"\`, \`\"ementa\"\`, \`\"precedente\"\`, \`\"tema\"\`, \`\"repetitivo\"\`, \`\"TRF\"\`, \`\"Turma Recursal\"\`, \`\"STJ\"\`, \`\"STF\"\`, **somente** se fizer sentido no intake.
 - **Não invente números de temas, súmulas ou julgados**. Apenas gere termos para busca.
 
 ---
 
 ## consulta_pronta (COMO MONTAR)
-`consulta_pronta` deve:
+\`consulta_pronta\` deve:
 - combinar termos_principais + termos_secundarios;
-- conter **frases entre aspas** quando útil (ex.: `\"contrarrazões à apelação\"`, `\"ausência de dialeticidade\"`);
-- usar **parênteses para sinônimos** quando útil (ex.: `(\"alegações finais\" OR \"memoriais\")` — se aplicável);
-- usar `-` para exclusões (ex.: `-trabalhista -penal -familia -consumidor`);
+- conter **frases entre aspas** quando útil (ex.: \`\"contrarrazões à apelação\"\`, \`\"ausência de dialeticidade\"\`);
+- usar **parênteses para sinônimos** quando útil (ex.: \`(\"alegações finais\" OR \"memoriais\")\` — se aplicável);
+- usar \`-\` para exclusões (ex.: \`-trabalhista -penal -familia -consumidor\`);
 - parecer algo que um advogado experiente digitariam para achar contrarrazões quase idênticas.
 
 ---
 
 ## SAÍDA
 Retorne **somente** um JSON válido no schema do node, preenchendo:
-- `termos_principais`
-- `termos_secundarios`
-- `jurisdicao`
-- `ramo_direito`
-- `tipo_acao`
-- `tipo_recurso`
-- `objetivo_principal`
-- `pontos_rebatidos` (ou equivalente no schema)
-- `fundamentos_foco`
-- `excluir_termos`
-- `consulta_pronta`
+- \`termos_principais\`
+- \`termos_secundarios\`
+- \`jurisdicao\`
+- \`ramo_direito\`
+- \`tipo_acao\`
+- \`tipo_recurso\`
+- \`objetivo_principal\`
+- \`pontos_rebatidos\` (ou equivalente no schema)
+- \`fundamentos_foco\`
+- \`excluir_termos\`
+- \`consulta_pronta\`
 
 Sem texto fora do JSON.`,
   model: "gpt-4.1",
