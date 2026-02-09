@@ -7954,7 +7954,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               output_text: agentColetarDadosRecursosPerguntaNicaResultTemp.finalOutput ?? ""
             };
           }
-        } else if (agenteClassificadorStageResult.output_parsed.category == "Contrarrazao") {
+        } else if (agenteClassificadorStageResult.output_parsed.category == "Contrarrazoes") {
           const intakeContrarrazEsConversacionalResultTemp = await run(
             intakeContrarrazEsConversacional,
             [
