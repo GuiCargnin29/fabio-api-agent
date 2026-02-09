@@ -49,6 +49,109 @@ const runSchema = z.object({
 
 type RunBody = z.infer<typeof runSchema>;
 
+type DocBlock = {
+  block_id?: string;
+  type?: string;
+  text?: string;
+  ordered?: boolean;
+  items?: string[];
+  rows?: string[][];
+  source?: string;
+  signatures?: Array<{ name: string; oab: string }>;
+};
+
+type DocSection = {
+  ordem?: string | number;
+  titulo_literal?: string;
+  blocks?: DocBlock[];
+};
+
+type FinalDoc = {
+  doc?: {
+    title?: string;
+    sections?: DocSection[];
+  };
+};
+
+function normalizeFinalJson(result: unknown) {
+  if (!result || typeof result !== "object") return result;
+  const doc = (result as FinalDoc).doc;
+  if (!doc || !Array.isArray(doc.sections)) return result;
+
+  const sections = doc.sections;
+  let fechoSection: DocSection | undefined;
+  let fechoIndex = -1;
+  let localDataSection: DocSection | undefined;
+  let localDataIndex = -1;
+  let signaturesBlock: DocBlock | undefined;
+
+  for (let i = 0; i < sections.length; i += 1) {
+    const s = sections[i];
+    const blocks = Array.isArray(s.blocks) ? s.blocks : [];
+    const hasFechoBlock = blocks.some((b) => b.block_id === "fecho");
+    const hasLocalDataBlock = blocks.some((b) => b.block_id === "local_data_assinatura_oab");
+    const hasSignatures = blocks.find((b) => b.type === "signatures");
+    if (!fechoSection && (hasFechoBlock || (s.titulo_literal ?? "").toLowerCase().includes("termos"))) {
+      fechoSection = s;
+      fechoIndex = i;
+    }
+    if (!localDataSection && hasLocalDataBlock) {
+      localDataSection = s;
+      localDataIndex = i;
+    }
+    if (!signaturesBlock && hasSignatures) {
+      signaturesBlock = hasSignatures;
+    }
+  }
+
+  const localDataText =
+    localDataSection?.blocks?.find((b) => b.block_id === "local_data_assinatura_oab")?.text ??
+    "";
+
+  if (!fechoSection) return result;
+
+  const fechoBlocks = Array.isArray(fechoSection.blocks) ? fechoSection.blocks : [];
+  const fechoTextBlock = fechoBlocks.find((b) => b.block_id === "fecho");
+  const baseFechoLine =
+    (fechoTextBlock?.text && fechoTextBlock.text.trim()) ||
+    "Termos em que, pede deferimento.";
+
+  const localLine =
+    (localDataText && localDataText.trim()) || "Cidade, [PREENCHER: data].";
+
+  const normalizedFechoText = `${baseFechoLine}\n${localLine}`;
+
+  const newFechoBlock: DocBlock = {
+    block_id: "fecho",
+    type: "paragraph",
+    text: normalizedFechoText
+  };
+
+  const newSignaturesBlock: DocBlock =
+    signaturesBlock ??
+    ({
+      type: "signatures",
+      signatures: [
+        { name: "Nome do Advogado", oab: "OAB/UF XXXXX" }
+      ]
+    } as DocBlock);
+
+  fechoSection.blocks = [newFechoBlock, newSignaturesBlock];
+  fechoSection.titulo_literal = "Termos em que, pede deferimento.";
+
+  if (localDataSection && localDataIndex >= 0) {
+    sections.splice(localDataIndex, 1);
+  }
+
+  // Remove any lingering local_data_assinatura_oab blocks in other sections
+  for (const s of sections) {
+    if (!Array.isArray(s.blocks)) continue;
+    s.blocks = s.blocks.filter((b) => b.block_id !== "local_data_assinatura_oab");
+  }
+
+  return result;
+}
+
 function requireApiKey(headerValue: string | undefined) {
   if (!headerValue) return false;
   return headerValue === env.APP_API_KEY;
@@ -115,7 +218,7 @@ fastify.post<{ Body: RunBody }>("/run", async (request, reply) => {
 
   try {
     const result = await runWorkflow(parsed.data);
-    reply.send(result);
+    reply.send(normalizeFinalJson(result));
   } catch (err: any) {
     request.log.error({ err }, "runWorkflow failed");
     reply.status(500).send({
@@ -171,6 +274,11 @@ fastify.get<{ Params: { id: string } }>("/jobs/:id", async (request, reply) => {
     return;
   }
 
+  // Normalize just before returning so clients always see the standardized fecho
+  if (job.status === "done" && job.result) {
+    reply.send({ ...job, result: normalizeFinalJson(job.result) });
+    return;
+  }
   reply.send(job);
 });
 
