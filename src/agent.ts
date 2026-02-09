@@ -7479,9 +7479,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             });
             conversationHistory.push({
               role: "system",
-              content: [
-                { type: "input_text", text: "File search results:\\n" + JSON.stringify(filesearchResult, null, 2) }
-              ]
+              content: "File search results:\n" + JSON.stringify(filesearchResult, null, 2)
             });
             const iniciaisSelecionarEExtrairTrechosResultTemp = await run(
               iniciaisSelecionarEExtrairTrechos,
@@ -7592,9 +7590,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             });
             conversationHistory.push({
               role: "system",
-              content: [
-                { type: "input_text", text: "File search results:\\n" + JSON.stringify(filesearchResult, null, 2) }
-              ]
+              content: "File search results:\n" + JSON.stringify(filesearchResult, null, 2)
             });
             const contestaOExtrairTemplateResultTemp = await run(
               contestaOExtrairTemplate,
@@ -7705,9 +7701,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             });
             conversationHistory.push({
               role: "system",
-              content: [
-                { type: "input_text", text: "File search results:\\n" + JSON.stringify(filesearchResult, null, 2) }
-              ]
+              content: "File search results:\n" + JSON.stringify(filesearchResult, null, 2)
             });
             const rPlicaSelecionarEvidNciasResultTemp = await run(
               rPlicaSelecionarEvidNcias,
@@ -7818,9 +7812,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             });
             conversationHistory.push({
               role: "system",
-              content: [
-                { type: "input_text", text: "File search results:\\n" + JSON.stringify(filesearchResult, null, 2) }
-              ]
+              content: "File search results:\n" + JSON.stringify(filesearchResult, null, 2)
             });
             const memoriaisSelecionarEExtrairTrechosResultTemp = await run(
               memoriaisSelecionarEExtrairTrechos,
@@ -7931,9 +7923,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             });
             conversationHistory.push({
               role: "system",
-              content: [
-                { type: "input_text", text: "File search results:\\n" + JSON.stringify(filesearchResult, null, 2) }
-              ]
+              content: "File search results:\n" + JSON.stringify(filesearchResult, null, 2)
             });
             const recursosSelecionarEvidNciasResultTemp = await run(
               recursosSelecionarEvidNcias,
@@ -8044,9 +8034,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             });
             conversationHistory.push({
               role: "system",
-              content: [
-                { type: "input_text", text: "File search results:\\n" + JSON.stringify(filesearchResult, null, 2) }
-              ]
+              content: "File search results:\n" + JSON.stringify(filesearchResult, null, 2)
             });
             const contrarrazEsSelecionarEvidNciasResultTemp = await run(
               contrarrazEsSelecionarEvidNcias,
@@ -8157,9 +8145,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             });
             conversationHistory.push({
               role: "system",
-              content: [
-                { type: "input_text", text: "File search results:\\n" + JSON.stringify(filesearchResult, null, 2) }
-              ]
+              content: "File search results:\n" + JSON.stringify(filesearchResult, null, 2)
             });
             const cumprimentoDeSentenASelecionarEvidNciasResultTemp = await run(
               cumprimentoDeSentenASelecionarEvidNcias,
@@ -8270,9 +8256,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             });
             conversationHistory.push({
               role: "system",
-              content: [
-                { type: "input_text", text: "File search results:\\n" + JSON.stringify(filesearchResult, null, 2) }
-              ]
+              content: "File search results:\n" + JSON.stringify(filesearchResult, null, 2)
             });
             const petiEsGeraisSelecionarEvidNciasResultTemp = await run(
               petiEsGeraisSelecionarEvidNcias,
