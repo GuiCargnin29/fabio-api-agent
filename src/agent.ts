@@ -7469,13 +7469,19 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               output_text: JSON.stringify(iniciaisPrepararBuscaQueryPackResultTemp.finalOutput),
               output_parsed: iniciaisPrepararBuscaQueryPackResultTemp.finalOutput
             };
-            const filesearchResult = (await client.vectorStores.search("vs_697142e9fef08191855b1ab1e548eb8a", {query: `" {{input.output_parsed.consulta_pronta}}"`,
+            const filesearchResult = (await client.vectorStores.search("vs_697142e9fef08191855b1ab1e548eb8a", {query: iniciaisPrepararBuscaQueryPackResult.output_parsed.consulta_pronta,
             max_num_results: 20})).data.map((result) => {
               return {
                 id: result.file_id,
                 filename: result.filename,
                 score: result.score,
               }
+            });
+            conversationHistory.push({
+              role: "system",
+              content: [
+                { type: "input_text", text: "File search results:\\n" + JSON.stringify(filesearchResult, null, 2) }
+              ]
             });
             const iniciaisSelecionarEExtrairTrechosResultTemp = await run(
               iniciaisSelecionarEExtrairTrechos,
@@ -7576,13 +7582,19 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               output_text: JSON.stringify(contestaOPrepararBuscaQueryPackResultTemp.finalOutput),
               output_parsed: contestaOPrepararBuscaQueryPackResultTemp.finalOutput
             };
-            const filesearchResult = (await client.vectorStores.search("vs_69710dd50f088191a6d68298cda18ff7", {query: `" {{input.output_parsed.consulta_pronta}}"`,
+            const filesearchResult = (await client.vectorStores.search("vs_69710dd50f088191a6d68298cda18ff7", {query: contestaOPrepararBuscaQueryPackResult.output_parsed.consulta_pronta,
             max_num_results: 20})).data.map((result) => {
               return {
                 id: result.file_id,
                 filename: result.filename,
                 score: result.score,
               }
+            });
+            conversationHistory.push({
+              role: "system",
+              content: [
+                { type: "input_text", text: "File search results:\\n" + JSON.stringify(filesearchResult, null, 2) }
+              ]
             });
             const contestaOExtrairTemplateResultTemp = await run(
               contestaOExtrairTemplate,
@@ -7683,13 +7695,19 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               output_text: JSON.stringify(rPlicaPrepararBuscaQueryPackResultTemp.finalOutput),
               output_parsed: rPlicaPrepararBuscaQueryPackResultTemp.finalOutput
             };
-            const filesearchResult = (await client.vectorStores.search("vs_69711e8bee9c81919a906590740b1494", {query: `"{{input.output_parsed.consulta_pronta}}"`,
+            const filesearchResult = (await client.vectorStores.search("vs_69711e8bee9c81919a906590740b1494", {query: rPlicaPrepararBuscaQueryPackResult.output_parsed.consulta_pronta,
             max_num_results: 20})).data.map((result) => {
               return {
                 id: result.file_id,
                 filename: result.filename,
                 score: result.score,
               }
+            });
+            conversationHistory.push({
+              role: "system",
+              content: [
+                { type: "input_text", text: "File search results:\\n" + JSON.stringify(filesearchResult, null, 2) }
+              ]
             });
             const rPlicaSelecionarEvidNciasResultTemp = await run(
               rPlicaSelecionarEvidNcias,
@@ -7790,13 +7808,19 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               output_text: JSON.stringify(memoriaisPrepararBuscaQueryPackResultTemp.finalOutput),
               output_parsed: memoriaisPrepararBuscaQueryPackResultTemp.finalOutput
             };
-            const filesearchResult = (await client.vectorStores.search("vs_69718130d25c8191b15e4317a3e0447a", {query: `"{{input.output_parsed.consulta_pronta}}"`,
+            const filesearchResult = (await client.vectorStores.search("vs_69718130d25c8191b15e4317a3e0447a", {query: memoriaisPrepararBuscaQueryPackResult.output_parsed.consulta_pronta,
             max_num_results: 20})).data.map((result) => {
               return {
                 id: result.file_id,
                 filename: result.filename,
                 score: result.score,
               }
+            });
+            conversationHistory.push({
+              role: "system",
+              content: [
+                { type: "input_text", text: "File search results:\\n" + JSON.stringify(filesearchResult, null, 2) }
+              ]
             });
             const memoriaisSelecionarEExtrairTrechosResultTemp = await run(
               memoriaisSelecionarEExtrairTrechos,
@@ -7897,13 +7921,19 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               output_text: JSON.stringify(recursosPrepararBuscaQueryPackResultTemp.finalOutput),
               output_parsed: recursosPrepararBuscaQueryPackResultTemp.finalOutput
             };
-            const filesearchResult = (await client.vectorStores.search("vs_697128383c948191ae4731db3b8cf8cf", {query: `"{{input.output_parsed.consulta_pronta}}"`,
+            const filesearchResult = (await client.vectorStores.search("vs_697128383c948191ae4731db3b8cf8cf", {query: recursosPrepararBuscaQueryPackResult.output_parsed.consulta_pronta,
             max_num_results: 20})).data.map((result) => {
               return {
                 id: result.file_id,
                 filename: result.filename,
                 score: result.score,
               }
+            });
+            conversationHistory.push({
+              role: "system",
+              content: [
+                { type: "input_text", text: "File search results:\\n" + JSON.stringify(filesearchResult, null, 2) }
+              ]
             });
             const recursosSelecionarEvidNciasResultTemp = await run(
               recursosSelecionarEvidNcias,
@@ -8004,13 +8034,19 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               output_text: JSON.stringify(contrarrazEsPrepararBuscaQueryPackResultTemp.finalOutput),
               output_parsed: contrarrazEsPrepararBuscaQueryPackResultTemp.finalOutput
             };
-            const filesearchResult = (await client.vectorStores.search("vs_69713067d3648191944078f1c0103dd1", {query: `"{{input.output_parsed.consulta_pronta}}"`,
+            const filesearchResult = (await client.vectorStores.search("vs_69713067d3648191944078f1c0103dd1", {query: contrarrazEsPrepararBuscaQueryPackResult.output_parsed.consulta_pronta,
             max_num_results: 20})).data.map((result) => {
               return {
                 id: result.file_id,
                 filename: result.filename,
                 score: result.score,
               }
+            });
+            conversationHistory.push({
+              role: "system",
+              content: [
+                { type: "input_text", text: "File search results:\\n" + JSON.stringify(filesearchResult, null, 2) }
+              ]
             });
             const contrarrazEsSelecionarEvidNciasResultTemp = await run(
               contrarrazEsSelecionarEvidNcias,
@@ -8111,13 +8147,19 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               output_text: JSON.stringify(cumprimentoDeSentenAPrepararBuscaQueryPackResultTemp.finalOutput),
               output_parsed: cumprimentoDeSentenAPrepararBuscaQueryPackResultTemp.finalOutput
             };
-            const filesearchResult = (await client.vectorStores.search("vs_69713a6681f481919c00eee7d69026d1", {query: `"{{input.output_parsed.consulta_pronta}}"`,
+            const filesearchResult = (await client.vectorStores.search("vs_69713a6681f481919c00eee7d69026d1", {query: cumprimentoDeSentenAPrepararBuscaQueryPackResult.output_parsed.consulta_pronta,
             max_num_results: 20})).data.map((result) => {
               return {
                 id: result.file_id,
                 filename: result.filename,
                 score: result.score,
               }
+            });
+            conversationHistory.push({
+              role: "system",
+              content: [
+                { type: "input_text", text: "File search results:\\n" + JSON.stringify(filesearchResult, null, 2) }
+              ]
             });
             const cumprimentoDeSentenASelecionarEvidNciasResultTemp = await run(
               cumprimentoDeSentenASelecionarEvidNcias,
@@ -8218,13 +8260,19 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               output_text: JSON.stringify(petiEsGeraisPrepararBuscaQueryPackResultTemp.finalOutput),
               output_parsed: petiEsGeraisPrepararBuscaQueryPackResultTemp.finalOutput
             };
-            const filesearchResult = (await client.vectorStores.search("vs_69718200f9148191b85c707e239aa367", {query: `"{{input.output_parsed.consulta_pronta}}"`,
+            const filesearchResult = (await client.vectorStores.search("vs_69718200f9148191b85c707e239aa367", {query: petiEsGeraisPrepararBuscaQueryPackResult.output_parsed.consulta_pronta,
             max_num_results: 20})).data.map((result) => {
               return {
                 id: result.file_id,
                 filename: result.filename,
                 score: result.score,
               }
+            });
+            conversationHistory.push({
+              role: "system",
+              content: [
+                { type: "input_text", text: "File search results:\\n" + JSON.stringify(filesearchResult, null, 2) }
+              ]
             });
             const petiEsGeraisSelecionarEvidNciasResultTemp = await run(
               petiEsGeraisSelecionarEvidNcias,
