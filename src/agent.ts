@@ -7354,7 +7354,19 @@ Nenhum texto fora do JSON.`,
   }
 });
 
-type WorkflowInput = { input_as_text: string };
+type WorkflowAttachment = {
+  attachment_id: string;
+  file_id: string;
+  filename: string;
+  mime_type: string;
+  size_bytes: number;
+};
+
+type WorkflowInput = {
+  input_as_text: string;
+  chat_id?: string;
+  attachments?: WorkflowAttachment[];
+};
 
 
 // Main code entrypoint
@@ -7363,9 +7375,41 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
     const state = {
 
     };
-    const conversationHistory: AgentInputItem[] = [
-      { role: "user", content: [{ type: "input_text", text: workflow.input_as_text }] }
+    const userContent: AgentInputItem[] = [];
+    const messageContent: Array<{ type: "input_text"; text: string } | { type: "input_file"; file: { id: string }; filename: string }> = [
+      { type: "input_text", text: workflow.input_as_text }
     ];
+
+    if (Array.isArray(workflow.attachments) && workflow.attachments.length > 0) {
+      messageContent.push(
+        ...workflow.attachments.map((attachment) => ({
+          type: "input_file" as const,
+          file: { id: attachment.file_id },
+          filename: attachment.filename
+        }))
+      );
+
+      userContent.push({
+        role: "system",
+        content:
+          "Anexos disponíveis nesta conversa (use quando relevante):\n" +
+          JSON.stringify(
+            workflow.attachments.map((attachment) => ({
+              attachment_id: attachment.attachment_id,
+              file_id: attachment.file_id,
+              filename: attachment.filename,
+              mime_type: attachment.mime_type,
+              size_bytes: attachment.size_bytes
+            })),
+            null,
+            2
+          ) +
+          "\nRegra: só inclua bloco de mídia no JSON final se o usuário pedir explicitamente para incluir imagem/arquivo no resultado."
+      });
+    }
+
+    userContent.push({ role: "user", content: messageContent });
+    const conversationHistory: AgentInputItem[] = [...userContent];
     const runner = new Runner({
       traceMetadata: {
         __trace_source__: "agent-builder",

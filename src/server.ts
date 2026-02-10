@@ -6,6 +6,8 @@ import rateLimit from "@fastify/rate-limit";
 import { z } from "zod";
 import { runWorkflow } from "./agent.js";
 import { randomUUID } from "node:crypto";
+import { OpenAI } from "openai";
+import { toFile } from "openai/uploads";
 
 const envSchema = z.object({
   OPENAI_API_KEY: z.string().min(1, "OPENAI_API_KEY is required"),
@@ -16,12 +18,13 @@ const envSchema = z.object({
 });
 
 const env = envSchema.parse(process.env);
+const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY, timeout: 120000 });
 
 const fastify = Fastify({
   logger: {
     level: env.LOG_LEVEL ?? "info"
   },
-  bodyLimit: 1_000_000
+  bodyLimit: 25_000_000
 });
 
 await fastify.register(cors, {
@@ -43,11 +46,83 @@ fastify.setErrorHandler((error, _request, reply) => {
   reply.status(status).send({ error: code, message });
 });
 
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_ATTACHMENTS_PER_MESSAGE = 7;
+const ALLOWED_MIME_TYPES = new Set([
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "image/jpeg",
+  "image/png"
+]);
+
 const runSchema = z.object({
-  input_as_text: z.string().min(1, "input_as_text is required")
+  chat_id: z.string().min(1, "chat_id is required"),
+  input_as_text: z.string().min(1, "input_as_text is required"),
+  attachment_ids: z.array(z.string().min(1)).max(MAX_ATTACHMENTS_PER_MESSAGE).optional()
+});
+
+const uploadSchema = z.object({
+  chat_id: z.string().min(1, "chat_id is required"),
+  filename: z.string().min(1, "filename is required"),
+  mime_type: z.string().min(1, "mime_type is required"),
+  content_base64: z.string().min(1, "content_base64 is required")
 });
 
 type RunBody = z.infer<typeof runSchema>;
+type UploadBody = z.infer<typeof uploadSchema>;
+
+type AttachmentRecord = {
+  attachment_id: string;
+  chat_id: string;
+  file_id: string;
+  filename: string;
+  mime_type: string;
+  size_bytes: number;
+  created_at: string;
+};
+
+type WorkflowRunInput = RunBody & {
+  attachments?: AttachmentRecord[];
+};
+
+const attachmentsById = new Map<string, AttachmentRecord>();
+const attachmentsByChatId = new Map<string, string[]>();
+
+function addAttachment(attachment: AttachmentRecord) {
+  attachmentsById.set(attachment.attachment_id, attachment);
+  const current = attachmentsByChatId.get(attachment.chat_id) ?? [];
+  attachmentsByChatId.set(attachment.chat_id, [...current, attachment.attachment_id]);
+}
+
+function decodeBase64File(contentBase64: string) {
+  const normalized = contentBase64.replace(/^data:[^;]+;base64,/, "");
+  const buffer = Buffer.from(normalized, "base64");
+  if (!buffer.length) {
+    throw new Error("content_base64 is empty or invalid");
+  }
+  return buffer;
+}
+
+function resolveAttachments(chatId: string, attachmentIds: string[] | undefined): AttachmentRecord[] {
+  const ids = attachmentIds ?? attachmentsByChatId.get(chatId) ?? [];
+  if (ids.length > MAX_ATTACHMENTS_PER_MESSAGE) {
+    throw new Error(`Maximum ${MAX_ATTACHMENTS_PER_MESSAGE} attachments per message`);
+  }
+
+  const resolved: AttachmentRecord[] = [];
+  for (const id of ids) {
+    const attachment = attachmentsById.get(id);
+    if (!attachment) {
+      throw new Error(`Attachment not found: ${id}`);
+    }
+    if (attachment.chat_id !== chatId) {
+      throw new Error(`Attachment does not belong to chat_id: ${id}`);
+    }
+    resolved.push(attachment);
+  }
+  return resolved;
+}
 
 type DocBlock = {
   block_id?: string;
@@ -186,7 +261,7 @@ function updateJob(id: string, patch: Partial<JobRecord>) {
   });
 }
 
-async function runJob(id: string, input: RunBody) {
+async function runJob(id: string, input: WorkflowRunInput) {
   updateJob(id, { status: "running" });
   try {
     const result = await runWorkflow(input);
@@ -216,13 +291,96 @@ fastify.post<{ Body: RunBody }>("/run", async (request, reply) => {
     return;
   }
 
+  let attachments: AttachmentRecord[] = [];
   try {
-    const result = await runWorkflow(parsed.data);
+    attachments = resolveAttachments(parsed.data.chat_id, parsed.data.attachment_ids);
+  } catch (err: any) {
+    reply.status(400).send({
+      error: "validation_error",
+      message: err?.message ?? "Invalid attachments"
+    });
+    return;
+  }
+
+  try {
+    const result = await runWorkflow({
+      ...parsed.data,
+      attachments
+    });
     reply.send(normalizeFinalJson(result));
   } catch (err: any) {
     request.log.error({ err }, "runWorkflow failed");
     reply.status(500).send({
       error: "workflow_error",
+      message: err?.message ?? "Unexpected error"
+    });
+  }
+});
+
+fastify.post<{ Body: UploadBody }>("/upload", async (request, reply) => {
+  const apiKey = request.headers["x-api-key"] as string | undefined;
+  if (!requireApiKey(apiKey)) {
+    reply.status(401).send({ error: "unauthorized", message: "Invalid API key" });
+    return;
+  }
+
+  const parsed = uploadSchema.safeParse(request.body);
+  if (!parsed.success) {
+    reply.status(400).send({
+      error: "validation_error",
+      message: "Invalid request body",
+      issues: parsed.error.flatten()
+    });
+    return;
+  }
+
+  if (!ALLOWED_MIME_TYPES.has(parsed.data.mime_type)) {
+    reply.status(400).send({
+      error: "validation_error",
+      message: "Unsupported mime_type"
+    });
+    return;
+  }
+
+  let fileBuffer: Buffer;
+  try {
+    fileBuffer = decodeBase64File(parsed.data.content_base64);
+  } catch (err: any) {
+    reply.status(400).send({
+      error: "validation_error",
+      message: err?.message ?? "Invalid content_base64"
+    });
+    return;
+  }
+
+  if (fileBuffer.byteLength > MAX_FILE_BYTES) {
+    reply.status(400).send({
+      error: "validation_error",
+      message: `File too large. Maximum size is ${MAX_FILE_BYTES} bytes`
+    });
+    return;
+  }
+
+  try {
+    const uploaded = await openai.files.create({
+      file: await toFile(fileBuffer, parsed.data.filename, { type: parsed.data.mime_type }),
+      purpose: "assistants"
+    });
+    const attachment: AttachmentRecord = {
+      attachment_id: `att_${randomUUID()}`,
+      chat_id: parsed.data.chat_id,
+      file_id: uploaded.id,
+      filename: parsed.data.filename,
+      mime_type: parsed.data.mime_type,
+      size_bytes: fileBuffer.byteLength,
+      created_at: new Date().toISOString()
+    };
+    addAttachment(attachment);
+    reply.send(attachment);
+  } catch (err: any) {
+    request.log.error({ err }, "upload failed");
+    reply.status(500).send({
+      error: "upload_error",
       message: err?.message ?? "Unexpected error"
     });
   }
@@ -245,6 +403,17 @@ fastify.post<{ Body: RunBody }>("/run-async", async (request, reply) => {
     return;
   }
 
+  let attachments: AttachmentRecord[] = [];
+  try {
+    attachments = resolveAttachments(parsed.data.chat_id, parsed.data.attachment_ids);
+  } catch (err: any) {
+    reply.status(400).send({
+      error: "validation_error",
+      message: err?.message ?? "Invalid attachments"
+    });
+    return;
+  }
+
   const id = randomUUID();
   const now = new Date().toISOString();
   jobs.set(id, {
@@ -255,7 +424,11 @@ fastify.post<{ Body: RunBody }>("/run-async", async (request, reply) => {
   });
 
   setImmediate(() => {
-    void runJob(id, parsed.data);
+    const workflowInput: WorkflowRunInput = {
+      ...parsed.data,
+      attachments
+    };
+    void runJob(id, workflowInput);
   });
 
   reply.send({ job_id: id, status: "queued" });
