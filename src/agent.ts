@@ -7376,7 +7376,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
 
     };
     const userContent: AgentInputItem[] = [];
-    const messageContent: Array<{ type: "input_text"; text: string } | { type: "input_file"; file: { id: string }; filename: string }> = [
+    const messageContent: Array<{ type: "input_text"; text: string } | { type: "input_file"; file: { id: string } }> = [
       { type: "input_text", text: workflow.input_as_text }
     ];
 
@@ -7384,8 +7384,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
       messageContent.push(
         ...workflow.attachments.map((attachment) => ({
           type: "input_file" as const,
-          file: { id: attachment.file_id },
-          filename: attachment.filename
+          file: { id: attachment.file_id }
         }))
       );
 
