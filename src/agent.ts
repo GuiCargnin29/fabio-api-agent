@@ -7454,12 +7454,10 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
       const rawItems = Array.isArray(newItems) ? newItems.map((item) => item?.rawItem).filter(Boolean) : [];
       conversationHistory.push(...sanitizeHistoryItems(rawItems));
     };
-    const runner = new Runner({
-      traceMetadata: {
-        __trace_source__: "agent-builder",
-        workflow_id: "wf_697147dea01c8190be93c53b8e96c71a0761ebadd0470529"
-      }
-    });
+    const runnerTraceMetadata = {
+      __trace_source__: "agent-builder",
+      workflow_id: "wf_697147dea01c8190be93c53b8e96c71a0761ebadd0470529"
+    } as const;
     let lastFinalOutput: any = undefined;
     const emitStatus: WorkflowStatusCallback = options?.onStatus ?? (() => {});
     const toPhase = (name: string) =>
@@ -7484,6 +7482,9 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
       if (Array.isArray(args?.[1])) {
         args[1] = sanitizeHistoryItems(args[1]);
       }
+      // Create a fresh Runner per node execution to avoid carrying transient
+      // previous_response state (which can include internal reasoning items).
+      const runner = new Runner({ traceMetadata: runnerTraceMetadata });
       const res = await (runner.run as any)(...args);
       if (res && res.finalOutput !== undefined) {
         lastFinalOutput = res.finalOutput;
