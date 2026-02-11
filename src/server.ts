@@ -50,8 +50,6 @@ const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_ATTACHMENTS_PER_MESSAGE = 7;
 const ALLOWED_MIME_TYPES = new Set([
   "application/pdf",
-  "application/msword",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "image/jpeg",
   "image/png"
 ]);
@@ -337,7 +335,8 @@ fastify.post<{ Body: UploadBody }>("/upload", async (request, reply) => {
   if (!ALLOWED_MIME_TYPES.has(parsed.data.mime_type)) {
     reply.status(400).send({
       error: "validation_error",
-      message: "Unsupported mime_type"
+      message:
+        "Unsupported mime_type. Supported: application/pdf, image/jpeg, image/png. Convert DOC/DOCX before upload."
     });
     return;
   }
