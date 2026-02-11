@@ -516,7 +516,11 @@ fastify.post<{ Body: RunBody }>("/run-stream", async (request, reply) => {
       ...parsed.data,
       attachments
     };
-    const result = await runWorkflow(workflowInput);
+    const result = await runWorkflow(workflowInput, {
+      onStatus: (phase, message) => {
+        sendEvent("status", { phase, message });
+      }
+    });
     const normalized = normalizeFinalJson(result);
 
     sendEvent("status", { phase: "streaming_result", message: "Transmitindo resposta" });

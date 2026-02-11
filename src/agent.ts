@@ -185,6 +185,18 @@ function ensureNonEmptySections(output: any, inputText: string) {
   return output;
 }
 
+function shouldUseFastQuestionPath(input: string): boolean {
+  const text = (input ?? "").toLowerCase();
+  if (!text.trim()) return false;
+
+  const asksDocumentAnalysis =
+    /(me\s+explique|explique|resuma|analis[ea]|o que (é|significa)|qual a diferen[çc]a|interprete)/.test(text);
+  const asksDrafting =
+    /(peti[cç][aã]o|contest[aã]?[cç][aã]o|r[eé]plica|memoriais|recurso|contrarraz[oõ]es|cumprimento de senten[cç]a|redigir|elaborar|escrever pe[cç]a)/.test(text);
+
+  return asksDocumentAnalysis && !asksDrafting;
+}
+
 async function runAndApplyGuardrails(inputText: string, config: any, history: any[], workflow: any) {
     const guardrails = Array.isArray(config?.guardrails) ? config.guardrails : [];
     const results = await runGuardrails(inputText, config, context, true);
@@ -298,7 +310,7 @@ Você deve retornar APENAS o JSON final.
   model: MODEL_LIGHT,
   outputType: ClassifyUserIntentSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 450,
     store: true
   }
 });
@@ -441,7 +453,7 @@ Nenhum texto fora do JSON.`,
   ],
   outputType: IntakeContestaOConversacionalSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 700,
     store: true
   }
 });
@@ -587,7 +599,7 @@ Nada fora do JSON.`,
   model: MODEL_DEFAULT,
   outputType: IntakeRPlicaConversacionalSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 700,
     store: true
   }
 });
@@ -634,7 +646,7 @@ Regras finais:
   model: MODEL_LIGHT,
   outputType: AgenteClassificadorStageSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 350,
     store: true
   }
 });
@@ -667,7 +679,7 @@ O usuário deve responder escolhendo uma dessas opções.
 `,
   model: MODEL_DEFAULT,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 600,
     store: true
   }
 });
@@ -691,6 +703,14 @@ Regras importantes:
 - Quando faltar informação, faça perguntas objetivas e práticas, como um advogado faria.
 - Se houver mais de um caminho possível, explique as opções, os riscos e quando cada uma se aplica.
 - Seja realista, técnico e honesto — nunca prometa resultados.
+- Por padrão, responda de forma curta (aprox. 150–300 palavras).
+- Só detalhe além disso se o usuário pedir explicitamente: \"quero versão completa\", \"detalhe tudo\", \"resposta completa\".
+
+Formato obrigatório da resposta curta:
+1) Resumo em 5 bullets
+2) O que prova
+3) O que não prova
+4) Próximo passo
 
 Estilo de resposta:
 - Escreva como advogado experiente explicando para outro advogado ou para o cliente.
@@ -701,7 +721,7 @@ Objetivo principal:
 - Ajudar o usuário a decidir o próximo passo correto, não apenas responder por responder.`,
   model: MODEL_DEFAULT,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 700,
     store: true
   }
 });
@@ -765,7 +785,7 @@ Saída obrigatória em JSON:
 `,
   model: MODEL_DEFAULT,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 700,
     store: true
   }
 });
@@ -925,7 +945,7 @@ Sem risco de erro material ou precedente falso
     webSearchPreview
   ],
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 700,
     store: true
   }
 });
@@ -956,7 +976,7 @@ Regras:
 - Seja educado, claro e direto.`,
   model: MODEL_DEFAULT,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 500,
     store: true
   }
 });
@@ -1027,7 +1047,7 @@ SAÍDA
   model: MODEL_DEFAULT,
   outputType: IniciaisPrepararBuscaQueryPackSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 2000,
     store: true
   }
 });
@@ -1230,7 +1250,7 @@ REGRAS ABSOLUTAS (SEM EXCEÇÃO)
   model: MODEL_DEFAULT,
   outputType: IniciaisSelecionarEExtrairTrechosSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 2000,
     store: true
   }
 });
@@ -1325,7 +1345,7 @@ Nenhum texto fora do JSON.`,
   model: MODEL_DEFAULT,
   outputType: ContestaOPrepararBuscaQueryPackSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 2000,
     store: true
   }
 });
@@ -1579,7 +1599,7 @@ REGRAS ABSOLUTAS (SEM EXCEÇÃO)
   model: MODEL_DEFAULT,
   outputType: ContestaOExtrairTemplateSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 2000,
     store: true
   }
 });
@@ -1616,7 +1636,7 @@ Preenchimento:
   model: MODEL_DEFAULT,
   outputType: IntakeIniciaisSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 700,
     store: true
   }
 });
@@ -1745,7 +1765,7 @@ Você precisa ter (de forma explícita OU por inferência permitida):
   model: MODEL_DEFAULT,
   outputType: IntakeIniciaisConversationalSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 700,
     store: true
   }
 });
@@ -1777,7 +1797,7 @@ Aguarde a resposta do usuário. Não faça mais perguntas nesta mensagem.
 `,
   model: MODEL_DEFAULT,
   modelSettings: {
-    maxTokens: 900,
+    maxTokens: 700,
     store: true
   }
 });
@@ -1841,7 +1861,7 @@ Seu trabalho é transformar a conversa em um caso estruturado e marcar exatament
   model: MODEL_DEFAULT,
   outputType: IntakeContestaOSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 700,
     store: true
   }
 });
@@ -1891,7 +1911,7 @@ Aguarde a resposta do usuário. Não faça mais perguntas nesta mensagem.
 `,
   model: MODEL_DEFAULT,
   modelSettings: {
-    maxTokens: 900,
+    maxTokens: 700,
     store: true
   }
 });
@@ -1947,7 +1967,7 @@ Lembre-se: Seu trabalho é transformar a conversa em um caso estruturado e marca
   model: MODEL_DEFAULT,
   outputType: IntakeRPlicaSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 700,
     store: true
   }
 });
@@ -2101,7 +2121,7 @@ Nenhum texto fora do JSON.
   model: MODEL_DEFAULT,
   outputType: RPlicaPrepararBuscaQueryPackSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 2000,
     store: true
   }
 });
@@ -2151,7 +2171,7 @@ Aguarde a resposta do usuário. Não faça mais perguntas nesta mensagem.
 `,
   model: MODEL_DEFAULT,
   modelSettings: {
-    maxTokens: 900,
+    maxTokens: 700,
     store: true
   }
 });
@@ -2405,7 +2425,7 @@ REGRAS ABSOLUTAS (SEM EXCEÇÃO)
   model: MODEL_DEFAULT,
   outputType: RPlicaSelecionarEvidNciasSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 2000,
     store: true
   }
 });
@@ -2563,7 +2583,7 @@ Nada fora do JSON.
   model: MODEL_DEFAULT,
   outputType: IntakeMemoriaisConversacionalSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 700,
     store: true
   }
 });
@@ -2642,7 +2662,7 @@ memoriais_intake_pack
   model: MODEL_DEFAULT,
   outputType: IntakeMemoriaisSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 700,
     store: true
   }
 });
@@ -2766,7 +2786,7 @@ Se o volume de acervo for pequeno, ampliar para 5 anos.`,
   model: MODEL_DEFAULT,
   outputType: MemoriaisPrepararBuscaQueryPackSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 2000,
     store: true
   }
 });
@@ -2802,7 +2822,7 @@ Para eu conseguir finalizar os memoriais, complete de uma vez só (copie e preen
 Aguarde a resposta do usuário. Não faça mais perguntas nesta mensagem.`,
   model: MODEL_DEFAULT,
   modelSettings: {
-    maxTokens: 900,
+    maxTokens: 700,
     store: true
   }
 });
@@ -3018,7 +3038,7 @@ REGRAS ABSOLUTAS (SEM EXCEÇÃO)
   model: MODEL_DEFAULT,
   outputType: MemoriaisSelecionarEExtrairTrechosSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 2000,
     store: true
   }
 });
@@ -3203,7 +3223,7 @@ Nada fora do JSON.`,
   model: MODEL_DEFAULT,
   outputType: IntakeRecursosConversacionalSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 700,
     store: true
   }
 });
@@ -3281,7 +3301,7 @@ recurso_intake_pack
   model: MODEL_DEFAULT,
   outputType: IntakeRecursosSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 700,
     store: true
   }
 });
@@ -3356,7 +3376,7 @@ SAÍDA
   model: MODEL_DEFAULT,
   outputType: RecursosPrepararBuscaQueryPackSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 2000,
     store: true
   }
 });
@@ -3407,7 +3427,7 @@ Não faça mais perguntas nesta mensagem.
 `,
   model: MODEL_DEFAULT,
   modelSettings: {
-    maxTokens: 900,
+    maxTokens: 700,
     store: true
   }
 });
@@ -3656,7 +3676,7 @@ REGRAS ABSOLUTAS (SEM EXCEÇÃO)
   model: MODEL_DEFAULT,
   outputType: RecursosSelecionarEvidNciasSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 2000,
     store: true
   }
 });
@@ -3849,7 +3869,7 @@ Nada fora do JSON.`,
   model: MODEL_DEFAULT,
   outputType: IntakeContrarrazEsConversacionalSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 700,
     store: true
   }
 });
@@ -3931,7 +3951,7 @@ Seu trabalho é transformar a conversa em um caso estruturado e marcar exatament
   model: MODEL_DEFAULT,
   outputType: IntakeContrarrazEsSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 700,
     store: true
   }
 });
@@ -4025,7 +4045,7 @@ Sem texto fora do JSON.`,
   model: MODEL_DEFAULT,
   outputType: ContrarrazEsPrepararBuscaQueryPackSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 2000,
     store: true
   }
 });
@@ -4077,7 +4097,7 @@ Não faça mais perguntas nesta mensagem.
 `,
   model: MODEL_DEFAULT,
   modelSettings: {
-    maxTokens: 900,
+    maxTokens: 700,
     store: true
   }
 });
@@ -4283,7 +4303,7 @@ Nada mais.`,
   model: MODEL_DEFAULT,
   outputType: ContrarrazEsSelecionarEvidNciasSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 2000,
     store: true
   }
 });
@@ -4439,7 +4459,7 @@ Nada fora do JSON.`,
   model: MODEL_DEFAULT,
   outputType: IntakeCumprimentoDeSentenAConversacionalSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 700,
     store: true
   }
 });
@@ -4520,7 +4540,7 @@ cumprimento_sentenca_intake_pack
   model: MODEL_DEFAULT,
   outputType: IntakeCumprimentoDeSentenASchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 700,
     store: true
   }
 });
@@ -4644,7 +4664,7 @@ Retorne apenas o JSON do schema do node, preenchendo com o máximo de especifici
   model: MODEL_DEFAULT,
   outputType: CumprimentoDeSentenAPrepararBuscaQueryPackSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 2000,
     store: true
   }
 });
@@ -4693,7 +4713,7 @@ Não faça mais perguntas nesta mensagem.
 `,
   model: MODEL_DEFAULT,
   modelSettings: {
-    maxTokens: 900,
+    maxTokens: 700,
     store: true
   }
 });
@@ -4855,7 +4875,7 @@ Não responda em texto livre.`,
   model: MODEL_DEFAULT,
   outputType: CumprimentoDeSentenASelecionarEvidNciasSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 2000,
     store: true
   }
 });
@@ -5006,7 +5026,7 @@ Nada fora do JSON.`,
   model: MODEL_DEFAULT,
   outputType: IntakePetiEsGeraisConversacionalSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 700,
     store: true
   }
 });
@@ -5089,7 +5109,7 @@ Você NÃO escreve a petição. Você apenas prepara o caso para busca e redaç�
   model: MODEL_DEFAULT,
   outputType: IntakePetiEsGeraisSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 700,
     store: true
   }
 });
@@ -5235,7 +5255,7 @@ Retorne APENAS um JSON válido conforme o schema \"cumprimento_sentenca_query_pa
   model: MODEL_DEFAULT,
   outputType: PetiEsGeraisPrepararBuscaQueryPackSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 2000,
     store: true
   }
 });
@@ -5283,7 +5303,7 @@ Aguarde a resposta do usuário.
 Não faça mais perguntas nesta mensagem.`,
   model: MODEL_DEFAULT,
   modelSettings: {
-    maxTokens: 900,
+    maxTokens: 700,
     store: true
   }
 });
@@ -5417,7 +5437,7 @@ Retorne APENAS o JSON estritamente válido conforme o schema \"peticoes_gerais_s
   model: MODEL_DEFAULT,
   outputType: PetiEsGeraisSelecionarEvidNciasSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 2000,
     store: true
   }
 });
@@ -5709,7 +5729,7 @@ Nenhum texto fora do JSON.`,
   model: MODEL_FINAL_JSON,
   outputType: SaDaJsonIniciaisSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 6000,
     store: true
   }
 });
@@ -5995,7 +6015,7 @@ Nenhum texto fora do JSON.`,
   model: MODEL_FINAL_JSON,
   outputType: SaDaJsonContestaOSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 6000,
     store: true
   }
 });
@@ -6216,7 +6236,7 @@ Nenhum texto fora do JSON.`,
   model: MODEL_FINAL_JSON,
   outputType: SaDaJsonRPlicaSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 6000,
     store: true
   }
 });
@@ -6437,7 +6457,7 @@ Nenhum texto fora do JSON.`,
   model: MODEL_FINAL_JSON,
   outputType: SaDaJsonMemoriaisSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 6000,
     store: true
   }
 });
@@ -6666,7 +6686,7 @@ Nenhum texto fora do JSON.`,
   model: MODEL_FINAL_JSON,
   outputType: SaDaJsonRecursosSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 6000,
     store: true
   }
 });
@@ -6896,7 +6916,7 @@ Nenhum texto fora do JSON.`,
   model: MODEL_FINAL_JSON,
   outputType: SaDaJsonContrarrazEsSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 6000,
     store: true
   }
 });
@@ -7128,7 +7148,7 @@ Nenhum texto fora do JSON.`,
   model: MODEL_FINAL_JSON,
   outputType: SaDaJsonCumprimentoDeSentenASchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 6000,
     store: true
   }
 });
@@ -7361,7 +7381,7 @@ Nenhum texto fora do JSON.`,
   model: MODEL_FINAL_JSON,
   outputType: SaDaJsonPetiEsGeraisSchema,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 6000,
     store: true
   }
 });
@@ -7380,9 +7400,14 @@ type WorkflowInput = {
   attachments?: WorkflowAttachment[];
 };
 
+type WorkflowStatusCallback = (phase: string, message: string) => void;
+type RunWorkflowOptions = {
+  onStatus?: WorkflowStatusCallback;
+};
+
 
 // Main code entrypoint
-export const runWorkflow = async (workflow: WorkflowInput) => {
+export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflowOptions) => {
   return await withTrace("Fabio Agent", async () => {
     const state = {
 
@@ -7428,7 +7453,18 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
       }
     });
     let lastFinalOutput: any = undefined;
+    const emitStatus: WorkflowStatusCallback = options?.onStatus ?? (() => {});
+    const toPhase = (name: string) =>
+      name
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "")
+        .slice(0, 64);
     const run = async (...args: any[]) => {
+      const agentName = args?.[0]?.name ?? "workflow_step";
+      emitStatus(toPhase(String(agentName)), `Executando: ${agentName}`);
       const res = await (runner.run as any)(...args);
       if (res && res.finalOutput !== undefined) {
         lastFinalOutput = res.finalOutput;
@@ -7436,11 +7472,28 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
       return res;
     };
     const guardrailsInputText = workflow.input_as_text;
+    emitStatus("guardrails", "Executando validações de segurança");
     const { hasTripwire: guardrailsHasTripwire, safeText: guardrailsAnonymizedText, failOutput: guardrailsFailOutput, passOutput: guardrailsPassOutput } = await runAndApplyGuardrails(guardrailsInputText, guardrailsConfig, conversationHistory, workflow);
     const guardrailsOutput = (guardrailsHasTripwire ? guardrailsFailOutput : guardrailsPassOutput);
     if (guardrailsHasTripwire) {
       return guardrailsOutput;
     } else {
+      if (shouldUseFastQuestionPath(workflow.input_as_text)) {
+        emitStatus("fast_question_path", "Pergunta curta detectada: resposta direta");
+        const perguntaGeralSResponderResultTemp = await run(
+          perguntaGeralSResponder,
+          [
+            ...conversationHistory
+          ]
+        );
+        conversationHistory.push(...perguntaGeralSResponderResultTemp.newItems.map((item) => item.rawItem));
+        if (!perguntaGeralSResponderResultTemp.finalOutput) {
+          throw new Error("Agent result is undefined");
+        }
+        const perguntaGeralSResponderResult = {
+          output_text: perguntaGeralSResponderResultTemp.finalOutput ?? ""
+        };
+      } else {
       const classifyUserIntentResultTemp = await run(
         classifyUserIntent,
         [
@@ -8522,6 +8575,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
         const fallbackSeguranAResult = {
           output_text: fallbackSeguranAResultTemp.finalOutput ?? ""
         };
+      }
       }
     }
     const finalOutput = lastFinalOutput ?? { error: "no_output", message: "Workflow did not return output." };
