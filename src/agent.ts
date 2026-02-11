@@ -1640,6 +1640,8 @@ const agentColetarDadosIniciaisPerguntaNica = new Agent({
 
 Peça ao usuário para responder EM UMA ÚNICA MENSAGEM, copiando e preenchendo o checklist abaixo (sem explicar nada além disso).
 
+Você DEVE retornar somente o texto da pergunta/checklist, sem comentários extras, sem metainstruções, sem mencionar desenvolvedor, sistema, prompt, próxima interação ou regras internas.
+
 Pergunta ao usuário (envie exatamente assim):
 
 Para eu preparar a petição inicial corretamente, responda de uma vez (copie e preencha):
@@ -1659,7 +1661,7 @@ Aguarde a resposta do usuário. Não faça mais perguntas nesta mensagem.
 `,
   model: MODEL_DEFAULT,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 900,
     store: true
   }
 });
@@ -1773,7 +1775,7 @@ Aguarde a resposta do usuário. Não faça mais perguntas nesta mensagem.
 `,
   model: MODEL_DEFAULT,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 900,
     store: true
   }
 });
@@ -2033,7 +2035,7 @@ Aguarde a resposta do usuário. Não faça mais perguntas nesta mensagem.
 `,
   model: MODEL_DEFAULT,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 900,
     store: true
   }
 });
@@ -2684,7 +2686,7 @@ Para eu conseguir finalizar os memoriais, complete de uma vez só (copie e preen
 Aguarde a resposta do usuário. Não faça mais perguntas nesta mensagem.`,
   model: MODEL_DEFAULT,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 900,
     store: true
   }
 });
@@ -3289,7 +3291,7 @@ Não faça mais perguntas nesta mensagem.
 `,
   model: MODEL_DEFAULT,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 900,
     store: true
   }
 });
@@ -3959,7 +3961,7 @@ Não faça mais perguntas nesta mensagem.
 `,
   model: MODEL_DEFAULT,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 900,
     store: true
   }
 });
@@ -4575,7 +4577,7 @@ Não faça mais perguntas nesta mensagem.
 `,
   model: MODEL_DEFAULT,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 900,
     store: true
   }
 });
@@ -5165,7 +5167,7 @@ Aguarde a resposta do usuário.
 Não faça mais perguntas nesta mensagem.`,
   model: MODEL_DEFAULT,
   modelSettings: {
-    maxTokens: 12000,
+    maxTokens: 900,
     store: true
   }
 });
