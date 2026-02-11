@@ -21,6 +21,10 @@ const webSearchPreview = webSearchTool({
 // Shared client for guardrails and file search
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, timeout: 120000 });
 
+const MODEL_LIGHT = process.env.MODEL_LIGHT ?? "gpt-5-nano";
+const MODEL_DEFAULT = process.env.MODEL_DEFAULT ?? "gpt-5-mini";
+const MODEL_FINAL_JSON = process.env.MODEL_FINAL_JSON ?? "gpt-5.1";
+
 // Guardrails definitions
 const guardrailsConfig = {
   guardrails: [
@@ -175,7 +179,7 @@ Proibições:
 
 Você deve retornar APENAS o JSON final.
 `,
-  model: "gpt-4.1",
+  model: MODEL_LIGHT,
   outputType: ClassifyUserIntentSchema,
   modelSettings: {
     temperature: 0.05,
@@ -317,7 +321,7 @@ OU ao menos uma frase clara do tipo: \"queremos improcedência total\", \"querem
 #####################################################################
 Retorne SOMENTE o JSON válido no schema configurado para este nó.
 Nenhum texto fora do JSON.`,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   tools: [
     fileSearch
   ],
@@ -468,7 +472,7 @@ Checklist do que pedir (adaptar aos itens faltantes):
 #####################################################################
 Retorne SOMENTE o JSON válido no schema \"replica_case_pack\".
 Nada fora do JSON.`,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   outputType: IntakeRPlicaConversacionalSchema,
   modelSettings: {
     temperature: 0.21,
@@ -517,7 +521,7 @@ Regras finais:
 - Nunca invente categorias.
 - Nunca retorne múltiplas categorias.
 - Se estiver em dúvida, retorne \"Else\".`,
-  model: "gpt-4.1",
+  model: MODEL_LIGHT,
   outputType: AgenteClassificadorStageSchema,
   modelSettings: {
     temperature: 0,
@@ -553,7 +557,7 @@ Você deve perguntar exatamente qual das opções abaixo o usuário deseja:
 
 O usuário deve responder escolhendo uma dessas opções.
 `,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   modelSettings: {
     temperature: 0.2,
     topP: 0.3,
@@ -589,7 +593,7 @@ Estilo de resposta:
 
 Objetivo principal:
 - Ajudar o usuário a decidir o próximo passo correto, não apenas responder por responder.`,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   modelSettings: {
     temperature: 1,
     topP: 1,
@@ -655,7 +659,7 @@ Saída obrigatória em JSON:
   ]
 }
 `,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   modelSettings: {
     temperature: 0.2,
     topP: 0.3,
@@ -814,7 +818,7 @@ Copie o conteúdo
 Utilize diretamente em uma peça
 Sem risco de erro material ou precedente falso
 `,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   tools: [
     webSearchPreview
   ],
@@ -850,7 +854,7 @@ Regras:
 - NÃO faça nenhuma busca.
 - Apenas oriente o usuário a explicar melhor o pedido.
 - Seja educado, claro e direto.`,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   modelSettings: {
     temperature: 0.2,
     topP: 1,
@@ -922,7 +926,7 @@ QUALIDADE (FOCO EM SEMELHANÇA)
 SAÍDA
 - Retorne SOMENTE o JSON válido no schema \"iniciais_query_pack\".
 - Não escreva nada fora do JSON.`,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   outputType: IniciaisPrepararBuscaQueryPackSchema,
   modelSettings: {
     temperature: 0.05,
@@ -1127,7 +1131,7 @@ REGRAS ABSOLUTAS (SEM EXCEÇÃO)
 - Proibido criar nova estrutura de petição.
 - Proibido misturar modelos diferentes.
 - Se algo estiver ausente, registre como ausente + alerta + checklist.`,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   outputType: IniciaisSelecionarEExtrairTrechosSchema,
   modelSettings: {
     temperature: 0.18,
@@ -1224,7 +1228,7 @@ E quaisquer temas explicitamente incompatíveis com o caso do intake.
 ## SAÍDA
 Retorne APENAS um JSON válido conforme o schema \`contestacao_query_pack\`.
 Nenhum texto fora do JSON.`,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   outputType: ContestaOPrepararBuscaQueryPackSchema,
   modelSettings: {
     temperature: 0.19,
@@ -1480,7 +1484,7 @@ REGRAS ABSOLUTAS (SEM EXCEÇÃO)
 - Proibido misturar modelos.
 - Se algo estiver ausente, deixe \"\" e registre em checklist/alertas.
 `,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   outputType: ContestaOExtrairTemplateSchema,
   modelSettings: {
     temperature: 0.21,
@@ -1519,7 +1523,7 @@ Preenchimento:
 - pronto_para_busca: false se faltar o mínimo; true se já dá para preparar Query Pack.
 - mensagem_ao_usuario: só quando pronto_para_busca=false (mensagem curta pedindo as respostas).
 `,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   outputType: IntakeIniciaisSchema,
   modelSettings: {
     temperature: 0.2,
@@ -1650,7 +1654,7 @@ Você precisa ter (de forma explícita OU por inferência permitida):
   - pedido principal
   - urgência (sim/não)
   - provas disponíveis`,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   outputType: IntakeIniciaisConversationalSchema,
   modelSettings: {
     temperature: 0.22,
@@ -1683,7 +1687,7 @@ Para eu preparar a petição inicial corretamente, responda de uma vez (copie e 
 
 Aguarde a resposta do usuário. Não faça mais perguntas nesta mensagem.
 `,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   modelSettings: {
     temperature: 1,
     topP: 1,
@@ -1748,7 +1752,7 @@ Preenchimento dos campos:
 Lembre-se:
 Seu trabalho é transformar a conversa em um caso estruturado e marcar exatamente o que ainda falta.
 `,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   outputType: IntakeContestaOSchema,
   modelSettings: {
     temperature: 0.2,
@@ -1801,7 +1805,7 @@ Para eu conseguir finalizar a contestação, complete de uma vez só (copie e pr
 
 Aguarde a resposta do usuário. Não faça mais perguntas nesta mensagem.
 `,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   modelSettings: {
     temperature: 0.23,
     topP: 0.7,
@@ -1858,7 +1862,7 @@ false se faltar o mínimo (ex: não sabe o que a contestação alegou / não sab
 true se já der para preparar o Query Pack.
 mensagem_ao_usuario: só quando pronto_para_busca=false (mensagem curta pedindo as informações que faltam).
 Lembre-se: Seu trabalho é transformar a conversa em um caso estruturado e marcar exatamente o que ainda falta.`,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   outputType: IntakeRPlicaSchema,
   modelSettings: {
     temperature: 0.21,
@@ -2014,7 +2018,7 @@ Exemplo de estilo aceitável:
 Retorne APENAS o JSON no schema \"replica_query_pack\".
 Nenhum texto fora do JSON.
 `,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   outputType: RPlicaPrepararBuscaQueryPackSchema,
   modelSettings: {
     temperature: 0.1,
@@ -2067,7 +2071,7 @@ Para eu conseguir finalizar a réplica, complete de uma vez só (copie e preench
 
 Aguarde a resposta do usuário. Não faça mais perguntas nesta mensagem.
 `,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   modelSettings: {
     temperature: 0.23,
     topP: 0.71,
@@ -2322,7 +2326,7 @@ REGRAS ABSOLUTAS (SEM EXCEÇÃO)
 - É proibido “assumir” que blocos universais existem: você deve mapear (provar) ou marcar ausente.
 - Se algo estiver ausente, deixe \"\" e registre em checklist/alertas.
 - Você NÃO deve normalizar títulos: copie exatamente como está.`,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   outputType: RPlicaSelecionarEvidNciasSchema,
   modelSettings: {
     temperature: 0.19,
@@ -2482,7 +2486,7 @@ Se faltar algo, itens_faltantes deve listar bullets e você deve pedir para o us
 Retorne SOMENTE o JSON válido no schema \"memoriais_case_pack\".
 Nada fora do JSON.
 `,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   outputType: IntakeMemoriaisConversacionalSchema,
   modelSettings: {
     temperature: 0.21,
@@ -2563,7 +2567,7 @@ A saída DEVE ser SOMENTE o JSON no schema:
 
 memoriais_intake_pack
 `,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   outputType: IntakeMemoriaisSchema,
   modelSettings: {
     temperature: 0.21,
@@ -2689,7 +2693,7 @@ Quando o File Search permitir filtro por data:
 - priorize peças dos ÚLTIMOS 3 ANOS.
 Motivo: manter aderência a entendimentos e formatação recentes sem ficar restrito demais.
 Se o volume de acervo for pequeno, ampliar para 5 anos.`,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   outputType: MemoriaisPrepararBuscaQueryPackSchema,
   modelSettings: {
     temperature: 0.1,
@@ -2728,7 +2732,7 @@ Pergunte EXATAMENTE no formato abaixo:
 Para eu conseguir finalizar os memoriais, complete de uma vez só (copie e preencha apenas o que falta):
 [LISTE AQUI SOMENTE OS ITENS QUE ESTÃO FALTANDO, NUMERADOS]
 Aguarde a resposta do usuário. Não faça mais perguntas nesta mensagem.`,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   modelSettings: {
     temperature: 0.23,
     topP: 0.71,
@@ -2945,7 +2949,7 @@ REGRAS ABSOLUTAS (SEM EXCEÇÃO)
 - Não crie estrutura nova.
 - Não misture modelos.
 - Se algo estiver ausente, deixe \"\" e registre em checklist/alertas.`,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   outputType: MemoriaisSelecionarEExtrairTrechosSchema,
   modelSettings: {
     temperature: 0.19,
@@ -3132,7 +3136,7 @@ Se faltar algo, itens_faltantes deve listar bullets e o usuário deve ser orient
 #####################################################################
 Retorne SOMENTE o JSON válido no schema \"recurso_case_pack\".
 Nada fora do JSON.`,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   outputType: IntakeRecursosConversacionalSchema,
   modelSettings: {
     temperature: 0.21,
@@ -3212,7 +3216,7 @@ A saída DEVE ser SOMENTE o JSON no schema:
 
 recurso_intake_pack
 `,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   outputType: IntakeRecursosSchema,
   modelSettings: {
     temperature: 0.21,
@@ -3289,7 +3293,7 @@ CONSULTA_PRONTA (STRING FINAL)
 
 SAÍDA
 - Retorne SOMENTE o JSON no schema do node (sem texto extra).`,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   outputType: RecursosPrepararBuscaQueryPackSchema,
   modelSettings: {
     temperature: 0.1,
@@ -3343,7 +3347,7 @@ Para eu conseguir preparar o recurso, complete de uma vez só (copie e preencha 
 Aguarde a resposta do usuário.  
 Não faça mais perguntas nesta mensagem.
 `,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   modelSettings: {
     temperature: 0.23,
     topP: 0.71,
@@ -3593,7 +3597,7 @@ REGRAS ABSOLUTAS (SEM EXCEÇÃO)
 - Não parafraseie: trechos extraídos devem ser literais.
 - Não crie estrutura nova.
 - Se algo estiver ausente, deixe \"\" e registre em checklist/alertas.`,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   outputType: RecursosSelecionarEvidNciasSchema,
   modelSettings: {
     temperature: 0.19,
@@ -3788,7 +3792,7 @@ Se faltar algo, itens_faltantes deve orientar o usuário a responder tudo de uma
 #####################################################################
 Retorne SOMENTE o JSON válido no schema \"contrarrazoes_case_pack\".
 Nada fora do JSON.`,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   outputType: IntakeContrarrazEsConversacionalSchema,
   modelSettings: {
     temperature: 0.21,
@@ -3872,7 +3876,7 @@ PREENCHIMENTO DOS CAMPOS:
 LEMBRE-SE:
 Seu trabalho é transformar a conversa em um caso estruturado e marcar exatamente o que ainda falta.
 `,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   outputType: IntakeContrarrazEsSchema,
   modelSettings: {
     temperature: 0.21,
@@ -3968,7 +3972,7 @@ Retorne **somente** um JSON válido no schema do node, preenchendo:
 - \`consulta_pronta\`
 
 Sem texto fora do JSON.`,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   outputType: ContrarrazEsPrepararBuscaQueryPackSchema,
   modelSettings: {
     temperature: 0.1,
@@ -4023,7 +4027,7 @@ Para eu conseguir preparar as contrarrazões, complete de uma vez só (copie e p
 Aguarde a resposta do usuário.  
 Não faça mais perguntas nesta mensagem.
 `,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   modelSettings: {
     temperature: 0.23,
     topP: 0.71,
@@ -4230,7 +4234,7 @@ Entregue APENAS:
 - pronto para revisão humana.
 
 Nada mais.`,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   outputType: ContrarrazEsSelecionarEvidNciasSchema,
   modelSettings: {
     temperature: 0.19,
@@ -4388,7 +4392,7 @@ Se intake_completo=\"nao\", itens_faltantes deve solicitar que o usuário respon
 #####################################################################
 Retorne SOMENTE o JSON válido no schema \"cumprimento_sentenca_case_pack\".
 Nada fora do JSON.`,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   outputType: IntakeCumprimentoDeSentenAConversacionalSchema,
   modelSettings: {
     temperature: 0.21,
@@ -4471,7 +4475,7 @@ A saída DEVE ser SOMENTE o JSON no schema:
 
 cumprimento_sentenca_intake_pack
 `,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   outputType: IntakeCumprimentoDeSentenASchema,
   modelSettings: {
     temperature: 0.21,
@@ -4597,7 +4601,7 @@ NÃO invente NB, DER, DIB, RMI ou números de processo.
 Retorne apenas o JSON do schema do node, preenchendo com o máximo de especificidade permitido pelo intake e mantendo campos vazios quando não houver base.
 
 `,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   outputType: CumprimentoDeSentenAPrepararBuscaQueryPackSchema,
   modelSettings: {
     temperature: 0.1,
@@ -4649,7 +4653,7 @@ Para eu conseguir preparar o cumprimento de sentença, complete de uma vez só (
 Aguarde a resposta do usuário.  
 Não faça mais perguntas nesta mensagem.
 `,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   modelSettings: {
     temperature: 0.23,
     topP: 0.71,
@@ -4812,7 +4816,7 @@ FORMATO DA RESPOSTA (OBRIGATÓRIO)
 ============================================================
 Retorne APENAS o JSON no schema \"cumprimento_sentenca_selected_material\".
 Não responda em texto livre.`,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   outputType: CumprimentoDeSentenASelecionarEvidNciasSchema,
   modelSettings: {
     temperature: 0.19,
@@ -4965,7 +4969,7 @@ Se intake_completo=\"nao\", itens_faltantes deve pedir que o usuário responda d
 #####################################################################
 Retorne SOMENTE o JSON válido no schema \"peticao_geral_case_pack\".
 Nada fora do JSON.`,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   outputType: IntakePetiEsGeraisConversacionalSchema,
   modelSettings: {
     temperature: 0.21,
@@ -5050,7 +5054,7 @@ LEMBRE-SE:
 Seu trabalho é transformar a conversa em um caso estruturado de PETIÇÃO GERAL e marcar exatamente o que ainda falta.
 
 Você NÃO escreve a petição. Você apenas prepara o caso para busca e redação.`,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   outputType: IntakePetiEsGeraisSchema,
   modelSettings: {
     temperature: 0.21,
@@ -5198,7 +5202,7 @@ CUMPRIMENTOS DE SENTENÇA quase idênticos ao caso atual, priorizando:
 
 # SAÍDA FINAL
 Retorne APENAS um JSON válido conforme o schema \"cumprimento_sentenca_query_pack\".`,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   outputType: PetiEsGeraisPrepararBuscaQueryPackSchema,
   modelSettings: {
     temperature: 0.1,
@@ -5249,7 +5253,7 @@ Para eu conseguir preparar a petição, complete de uma vez só (copie e preench
 
 Aguarde a resposta do usuário.
 Não faça mais perguntas nesta mensagem.`,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   modelSettings: {
     temperature: 0.23,
     topP: 0.71,
@@ -5384,7 +5388,7 @@ SAÍDA FINAL
 ============================================================
 Retorne APENAS o JSON estritamente válido conforme o schema \"peticoes_gerais_selected_material\".
 `,
-  model: "gpt-4.1",
+  model: MODEL_DEFAULT,
   outputType: PetiEsGeraisSelecionarEvidNciasSchema,
   modelSettings: {
     temperature: 0.19,
@@ -5678,7 +5682,7 @@ meta.warnings:
 #####################################################################
 Retorne APENAS um JSON válido no schema response_schema.
 Nenhum texto fora do JSON.`,
-  model: "gpt-4.1",
+  model: MODEL_FINAL_JSON,
   outputType: SaDaJsonIniciaisSchema,
   modelSettings: {
     temperature: 0,
@@ -5966,7 +5970,7 @@ meta.warnings:
 #####################################################################
 Retorne APENAS um JSON válido no schema response_schema.
 Nenhum texto fora do JSON.`,
-  model: "gpt-4.1",
+  model: MODEL_FINAL_JSON,
   outputType: SaDaJsonContestaOSchema,
   modelSettings: {
     temperature: 0,
@@ -6189,7 +6193,7 @@ Regras:
 #####################################################################
 Retorne APENAS um JSON válido e estritamente compatível com o schema response_schema.
 Nenhum texto fora do JSON.`,
-  model: "gpt-4.1",
+  model: MODEL_FINAL_JSON,
   outputType: SaDaJsonRPlicaSchema,
   modelSettings: {
     temperature: 0,
@@ -6412,7 +6416,7 @@ Regras:
 #####################################################################
 Retorne APENAS um JSON válido e estritamente compatível com o schema response_schema.
 Nenhum texto fora do JSON.`,
-  model: "gpt-4.1",
+  model: MODEL_FINAL_JSON,
   outputType: SaDaJsonMemoriaisSchema,
   modelSettings: {
     temperature: 0,
@@ -6643,7 +6647,7 @@ Regras:
 #####################################################################
 Retorne APENAS um JSON válido e estritamente compatível com o schema response_schema.
 Nenhum texto fora do JSON.`,
-  model: "gpt-4.1",
+  model: MODEL_FINAL_JSON,
   outputType: SaDaJsonRecursosSchema,
   modelSettings: {
     temperature: 0,
@@ -6875,7 +6879,7 @@ Regras:
 #####################################################################
 Retorne APENAS um JSON válido e estritamente compatível com o schema response_schema.
 Nenhum texto fora do JSON.`,
-  model: "gpt-4.1",
+  model: MODEL_FINAL_JSON,
   outputType: SaDaJsonContrarrazEsSchema,
   modelSettings: {
     temperature: 0,
@@ -7109,7 +7113,7 @@ Regras:
 #####################################################################
 Retorne APENAS um JSON válido e estritamente compatível com o schema response_schema.
 Nenhum texto fora do JSON.`,
-  model: "gpt-4.1",
+  model: MODEL_FINAL_JSON,
   outputType: SaDaJsonCumprimentoDeSentenASchema,
   modelSettings: {
     temperature: 0,
@@ -7344,7 +7348,7 @@ Regras:
 #####################################################################
 Retorne APENAS um JSON válido e estritamente compatível com o schema response_schema.
 Nenhum texto fora do JSON.`,
-  model: "gpt-4.1",
+  model: MODEL_FINAL_JSON,
   outputType: SaDaJsonPetiEsGeraisSchema,
   modelSettings: {
     temperature: 0,
