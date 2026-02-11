@@ -7508,6 +7508,18 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               output_text: JSON.stringify(intakeIniciaisResultTemp.finalOutput),
               output_parsed: intakeIniciaisResultTemp.finalOutput
             };
+
+            conversationHistory.push({
+              role: "system",
+              content:
+                "DADOS VINCULANTES DO CASO (use estes dados como verdade do caso atual):\n" +
+                JSON.stringify(intakeIniciaisResult.output_parsed, null, 2) +
+                "\n\nREGRAS OBRIGATÓRIAS:\n" +
+                "- NÃO reutilizar nomes, números de processo, foro, datas, valores ou fatos dos templates.\n" +
+                "- Usar templates e file search apenas para estilo, estrutura, ordem de seções e padrão argumentativo.\n" +
+                "- Quando houver conflito entre template e dados do caso, sempre prevalecem os dados do caso.\n" +
+                "- Se algum campo do caso não foi informado, usar placeholder explícito [PREENCHER]."
+            });
             const iniciaisPrepararBuscaQueryPackResultTemp = await run(
               iniciaisPrepararBuscaQueryPack,
               [
@@ -7529,7 +7541,10 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             const filesearchResult = normalizeVectorSearchResults(vectorSearchRaw);
             conversationHistory.push({
               role: "system",
-              content: "File search results:\n" + JSON.stringify(filesearchResult, null, 2)
+              content:
+                "File search results (usar APENAS como referência de estilo/estrutura e trechos argumentativos adaptáveis):\n" +
+                JSON.stringify(filesearchResult, null, 2) +
+                "\nNunca copiar fatos específicos do caso-modelo."
             });
             const iniciaisSelecionarEExtrairTrechosResultTemp = await run(
               iniciaisSelecionarEExtrairTrechos,
@@ -7614,6 +7629,17 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               output_text: JSON.stringify(intakeContestaOResultTemp.finalOutput),
               output_parsed: intakeContestaOResultTemp.finalOutput
             };
+            conversationHistory.push({
+              role: "system",
+              content:
+                "DADOS VINCULANTES DO CASO (use estes dados como verdade do caso atual):\n" +
+                JSON.stringify(intakeContestaOResult.output_parsed, null, 2) +
+                "\n\nREGRAS OBRIGATÓRIAS:\n" +
+                "- NÃO reutilizar nomes, números de processo, foro, datas, valores ou fatos dos templates.\n" +
+                "- Usar templates e file search apenas para estilo, estrutura, ordem de seções e padrão argumentativo.\n" +
+                "- Quando houver conflito entre template e dados do caso, sempre prevalecem os dados do caso.\n" +
+                "- Se algum campo do caso não foi informado, usar placeholder explícito [PREENCHER]."
+            });
             const contestaOPrepararBuscaQueryPackResultTemp = await run(
               contestaOPrepararBuscaQueryPack,
               [
@@ -7635,7 +7661,10 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             const filesearchResult = normalizeVectorSearchResults(vectorSearchRaw);
             conversationHistory.push({
               role: "system",
-              content: "File search results:\n" + JSON.stringify(filesearchResult, null, 2)
+              content:
+                "File search results (usar APENAS como referência de estilo/estrutura e trechos argumentativos adaptáveis):\n" +
+                JSON.stringify(filesearchResult, null, 2) +
+                "\nNunca copiar fatos específicos do caso-modelo."
             });
             const contestaOExtrairTemplateResultTemp = await run(
               contestaOExtrairTemplate,
@@ -7720,6 +7749,18 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               output_text: JSON.stringify(intakeRPlicaResultTemp.finalOutput),
               output_parsed: intakeRPlicaResultTemp.finalOutput
             };
+
+            conversationHistory.push({
+              role: "system",
+              content:
+                "DADOS VINCULANTES DO CASO (use estes dados como verdade do caso atual):\n" +
+                JSON.stringify(intakeRPlicaResult.output_parsed, null, 2) +
+                "\n\nREGRAS OBRIGATÓRIAS:\n" +
+                "- NÃO reutilizar nomes, números de processo, foro, datas, valores ou fatos dos templates.\n" +
+                "- Usar templates e file search apenas para estilo, estrutura, ordem de seções e padrão argumentativo.\n" +
+                "- Quando houver conflito entre template e dados do caso, sempre prevalecem os dados do caso.\n" +
+                "- Se algum campo do caso não foi informado, usar placeholder explícito [PREENCHER]."
+            });
             const rPlicaPrepararBuscaQueryPackResultTemp = await run(
               rPlicaPrepararBuscaQueryPack,
               [
@@ -7741,7 +7782,10 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             const filesearchResult = normalizeVectorSearchResults(vectorSearchRaw);
             conversationHistory.push({
               role: "system",
-              content: "File search results:\n" + JSON.stringify(filesearchResult, null, 2)
+              content:
+                "File search results (usar APENAS como referência de estilo/estrutura e trechos argumentativos adaptáveis):\n" +
+                JSON.stringify(filesearchResult, null, 2) +
+                "\nNunca copiar fatos específicos do caso-modelo."
             });
             const rPlicaSelecionarEvidNciasResultTemp = await run(
               rPlicaSelecionarEvidNcias,
@@ -7826,6 +7870,18 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               output_text: JSON.stringify(intakeMemoriaisResultTemp.finalOutput),
               output_parsed: intakeMemoriaisResultTemp.finalOutput
             };
+
+            conversationHistory.push({
+              role: "system",
+              content:
+                "DADOS VINCULANTES DO CASO (use estes dados como verdade do caso atual):\n" +
+                JSON.stringify(intakeMemoriaisResult.output_parsed, null, 2) +
+                "\n\nREGRAS OBRIGATÓRIAS:\n" +
+                "- NÃO reutilizar nomes, números de processo, foro, datas, valores ou fatos dos templates.\n" +
+                "- Usar templates e file search apenas para estilo, estrutura, ordem de seções e padrão argumentativo.\n" +
+                "- Quando houver conflito entre template e dados do caso, sempre prevalecem os dados do caso.\n" +
+                "- Se algum campo do caso não foi informado, usar placeholder explícito [PREENCHER]."
+            });
             const memoriaisPrepararBuscaQueryPackResultTemp = await run(
               memoriaisPrepararBuscaQueryPack,
               [
@@ -7847,7 +7903,10 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             const filesearchResult = normalizeVectorSearchResults(vectorSearchRaw);
             conversationHistory.push({
               role: "system",
-              content: "File search results:\n" + JSON.stringify(filesearchResult, null, 2)
+              content:
+                "File search results (usar APENAS como referência de estilo/estrutura e trechos argumentativos adaptáveis):\n" +
+                JSON.stringify(filesearchResult, null, 2) +
+                "\nNunca copiar fatos específicos do caso-modelo."
             });
             const memoriaisSelecionarEExtrairTrechosResultTemp = await run(
               memoriaisSelecionarEExtrairTrechos,
@@ -7932,6 +7991,18 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               output_text: JSON.stringify(intakeRecursosResultTemp.finalOutput),
               output_parsed: intakeRecursosResultTemp.finalOutput
             };
+
+            conversationHistory.push({
+              role: "system",
+              content:
+                "DADOS VINCULANTES DO CASO (use estes dados como verdade do caso atual):\n" +
+                JSON.stringify(intakeRecursosResult.output_parsed, null, 2) +
+                "\n\nREGRAS OBRIGATÓRIAS:\n" +
+                "- NÃO reutilizar nomes, números de processo, foro, datas, valores ou fatos dos templates.\n" +
+                "- Usar templates e file search apenas para estilo, estrutura, ordem de seções e padrão argumentativo.\n" +
+                "- Quando houver conflito entre template e dados do caso, sempre prevalecem os dados do caso.\n" +
+                "- Se algum campo do caso não foi informado, usar placeholder explícito [PREENCHER]."
+            });
             const recursosPrepararBuscaQueryPackResultTemp = await run(
               recursosPrepararBuscaQueryPack,
               [
@@ -7953,7 +8024,10 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             const filesearchResult = normalizeVectorSearchResults(vectorSearchRaw);
             conversationHistory.push({
               role: "system",
-              content: "File search results:\n" + JSON.stringify(filesearchResult, null, 2)
+              content:
+                "File search results (usar APENAS como referência de estilo/estrutura e trechos argumentativos adaptáveis):\n" +
+                JSON.stringify(filesearchResult, null, 2) +
+                "\nNunca copiar fatos específicos do caso-modelo."
             });
             const recursosSelecionarEvidNciasResultTemp = await run(
               recursosSelecionarEvidNcias,
@@ -8038,6 +8112,18 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               output_text: JSON.stringify(intakeContrarrazEsResultTemp.finalOutput),
               output_parsed: intakeContrarrazEsResultTemp.finalOutput
             };
+
+            conversationHistory.push({
+              role: "system",
+              content:
+                "DADOS VINCULANTES DO CASO (use estes dados como verdade do caso atual):\n" +
+                JSON.stringify(intakeContrarrazEsResult.output_parsed, null, 2) +
+                "\n\nREGRAS OBRIGATÓRIAS:\n" +
+                "- NÃO reutilizar nomes, números de processo, foro, datas, valores ou fatos dos templates.\n" +
+                "- Usar templates e file search apenas para estilo, estrutura, ordem de seções e padrão argumentativo.\n" +
+                "- Quando houver conflito entre template e dados do caso, sempre prevalecem os dados do caso.\n" +
+                "- Se algum campo do caso não foi informado, usar placeholder explícito [PREENCHER]."
+            });
             const contrarrazEsPrepararBuscaQueryPackResultTemp = await run(
               contrarrazEsPrepararBuscaQueryPack,
               [
@@ -8059,7 +8145,10 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             const filesearchResult = normalizeVectorSearchResults(vectorSearchRaw);
             conversationHistory.push({
               role: "system",
-              content: "File search results:\n" + JSON.stringify(filesearchResult, null, 2)
+              content:
+                "File search results (usar APENAS como referência de estilo/estrutura e trechos argumentativos adaptáveis):\n" +
+                JSON.stringify(filesearchResult, null, 2) +
+                "\nNunca copiar fatos específicos do caso-modelo."
             });
             const contrarrazEsSelecionarEvidNciasResultTemp = await run(
               contrarrazEsSelecionarEvidNcias,
@@ -8144,6 +8233,18 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               output_text: JSON.stringify(intakeCumprimentoDeSentenAResultTemp.finalOutput),
               output_parsed: intakeCumprimentoDeSentenAResultTemp.finalOutput
             };
+
+            conversationHistory.push({
+              role: "system",
+              content:
+                "DADOS VINCULANTES DO CASO (use estes dados como verdade do caso atual):\n" +
+                JSON.stringify(intakeCumprimentoDeSentenAResult.output_parsed, null, 2) +
+                "\n\nREGRAS OBRIGATÓRIAS:\n" +
+                "- NÃO reutilizar nomes, números de processo, foro, datas, valores ou fatos dos templates.\n" +
+                "- Usar templates e file search apenas para estilo, estrutura, ordem de seções e padrão argumentativo.\n" +
+                "- Quando houver conflito entre template e dados do caso, sempre prevalecem os dados do caso.\n" +
+                "- Se algum campo do caso não foi informado, usar placeholder explícito [PREENCHER]."
+            });
             const cumprimentoDeSentenAPrepararBuscaQueryPackResultTemp = await run(
               cumprimentoDeSentenAPrepararBuscaQueryPack,
               [
@@ -8165,7 +8266,10 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             const filesearchResult = normalizeVectorSearchResults(vectorSearchRaw);
             conversationHistory.push({
               role: "system",
-              content: "File search results:\n" + JSON.stringify(filesearchResult, null, 2)
+              content:
+                "File search results (usar APENAS como referência de estilo/estrutura e trechos argumentativos adaptáveis):\n" +
+                JSON.stringify(filesearchResult, null, 2) +
+                "\nNunca copiar fatos específicos do caso-modelo."
             });
             const cumprimentoDeSentenASelecionarEvidNciasResultTemp = await run(
               cumprimentoDeSentenASelecionarEvidNcias,
@@ -8250,6 +8354,18 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               output_text: JSON.stringify(intakePetiEsGeraisResultTemp.finalOutput),
               output_parsed: intakePetiEsGeraisResultTemp.finalOutput
             };
+
+            conversationHistory.push({
+              role: "system",
+              content:
+                "DADOS VINCULANTES DO CASO (use estes dados como verdade do caso atual):\n" +
+                JSON.stringify(intakePetiEsGeraisResult.output_parsed, null, 2) +
+                "\n\nREGRAS OBRIGATÓRIAS:\n" +
+                "- NÃO reutilizar nomes, números de processo, foro, datas, valores ou fatos dos templates.\n" +
+                "- Usar templates e file search apenas para estilo, estrutura, ordem de seções e padrão argumentativo.\n" +
+                "- Quando houver conflito entre template e dados do caso, sempre prevalecem os dados do caso.\n" +
+                "- Se algum campo do caso não foi informado, usar placeholder explícito [PREENCHER]."
+            });
             const petiEsGeraisPrepararBuscaQueryPackResultTemp = await run(
               petiEsGeraisPrepararBuscaQueryPack,
               [
@@ -8271,7 +8387,10 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             const filesearchResult = normalizeVectorSearchResults(vectorSearchRaw);
             conversationHistory.push({
               role: "system",
-              content: "File search results:\n" + JSON.stringify(filesearchResult, null, 2)
+              content:
+                "File search results (usar APENAS como referência de estilo/estrutura e trechos argumentativos adaptáveis):\n" +
+                JSON.stringify(filesearchResult, null, 2) +
+                "\nNunca copiar fatos específicos do caso-modelo."
             });
             const petiEsGeraisSelecionarEvidNciasResultTemp = await run(
               petiEsGeraisSelecionarEvidNcias,
