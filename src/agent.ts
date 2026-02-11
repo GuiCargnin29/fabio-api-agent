@@ -7465,7 +7465,16 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
     const run = async (...args: any[]) => {
       const agentName = args?.[0]?.name ?? "workflow_step";
       emitStatus(toPhase(String(agentName)), `Executando: ${agentName}`);
+      // Responses API can emit transient "reasoning" items that must not be replayed as input.
+      // If replayed, later calls may fail with:
+      // "Item '<id>' of type 'reasoning' was provided without its required following item."
+      if (Array.isArray(args?.[1])) {
+        args[1] = args[1].filter((inputItem: any) => inputItem?.type !== "reasoning");
+      }
       const res = await (runner.run as any)(...args);
+      if (Array.isArray(res?.newItems)) {
+        res.newItems = res.newItems.filter((newItem: any) => newItem?.rawItem?.type !== "reasoning");
+      }
       if (res && res.finalOutput !== undefined) {
         lastFinalOutput = res.finalOutput;
       }
