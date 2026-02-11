@@ -7446,6 +7446,14 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
 
     userContent.push({ role: "user", content: messageContent });
     const conversationHistory: AgentInputItem[] = [...userContent];
+    const sanitizeHistoryItems = (items: any[]): any[] => {
+      if (!Array.isArray(items)) return [];
+      return items.filter((item) => item && item.type !== "reasoning");
+    };
+    const appendNewItemsToHistory = (newItems: any[]) => {
+      const rawItems = Array.isArray(newItems) ? newItems.map((item) => item?.rawItem).filter(Boolean) : [];
+      conversationHistory.push(...sanitizeHistoryItems(rawItems));
+    };
     const runner = new Runner({
       traceMetadata: {
         __trace_source__: "agent-builder",
@@ -7465,16 +7473,18 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
     const run = async (...args: any[]) => {
       const agentName = args?.[0]?.name ?? "workflow_step";
       emitStatus(toPhase(String(agentName)), `Executando: ${agentName}`);
+      if (Array.isArray(conversationHistory)) {
+        const cleaned = sanitizeHistoryItems(conversationHistory);
+        conversationHistory.length = 0;
+        conversationHistory.push(...cleaned);
+      }
       // Responses API can emit transient "reasoning" items that must not be replayed as input.
       // If replayed, later calls may fail with:
       // "Item '<id>' of type 'reasoning' was provided without its required following item."
       if (Array.isArray(args?.[1])) {
-        args[1] = args[1].filter((inputItem: any) => inputItem?.type !== "reasoning");
+        args[1] = sanitizeHistoryItems(args[1]);
       }
       const res = await (runner.run as any)(...args);
-      if (Array.isArray(res?.newItems)) {
-        res.newItems = res.newItems.filter((newItem: any) => newItem?.rawItem?.type !== "reasoning");
-      }
       if (res && res.finalOutput !== undefined) {
         lastFinalOutput = res.finalOutput;
       }
@@ -7495,7 +7505,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
             ...conversationHistory
           ]
         );
-        conversationHistory.push(...perguntaGeralSResponderResultTemp.newItems.map((item) => item.rawItem));
+        appendNewItemsToHistory(perguntaGeralSResponderResultTemp.newItems);
         if (!perguntaGeralSResponderResultTemp.finalOutput) {
           throw new Error("Agent result is undefined");
         }
@@ -7509,7 +7519,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
           ...conversationHistory
         ]
       );
-      conversationHistory.push(...classifyUserIntentResultTemp.newItems.map((item) => item.rawItem));
+      appendNewItemsToHistory(classifyUserIntentResultTemp.newItems);
 
       if (!classifyUserIntentResultTemp.finalOutput) {
           throw new Error("Agent result is undefined");
@@ -7526,7 +7536,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
             ...conversationHistory
           ]
         );
-        conversationHistory.push(...agenteClassificadorStageResultTemp.newItems.map((item) => item.rawItem));
+        appendNewItemsToHistory(agenteClassificadorStageResultTemp.newItems);
 
         if (!agenteClassificadorStageResultTemp.finalOutput) {
             throw new Error("Agent result is undefined");
@@ -7543,7 +7553,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
               ...conversationHistory
             ]
           );
-          conversationHistory.push(...intakeIniciaisConversationalResultTemp.newItems.map((item) => item.rawItem));
+          appendNewItemsToHistory(intakeIniciaisConversationalResultTemp.newItems);
 
           if (!intakeIniciaisConversationalResultTemp.finalOutput) {
               throw new Error("Agent result is undefined");
@@ -7560,7 +7570,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...intakeIniciaisResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(intakeIniciaisResultTemp.newItems);
 
             if (!intakeIniciaisResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -7588,7 +7598,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...iniciaisPrepararBuscaQueryPackResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(iniciaisPrepararBuscaQueryPackResultTemp.newItems);
 
             if (!iniciaisPrepararBuscaQueryPackResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -7614,7 +7624,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...iniciaisSelecionarEExtrairTrechosResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(iniciaisSelecionarEExtrairTrechosResultTemp.newItems);
 
             if (!iniciaisSelecionarEExtrairTrechosResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -7630,7 +7640,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...saDaJsonIniciaisResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(saDaJsonIniciaisResultTemp.newItems);
 
             if (!saDaJsonIniciaisResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -7647,7 +7657,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...agentColetarDadosIniciaisPerguntaNicaResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(agentColetarDadosIniciaisPerguntaNicaResultTemp.newItems);
 
             if (!agentColetarDadosIniciaisPerguntaNicaResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -7664,7 +7674,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
               ...conversationHistory
             ]
           );
-          conversationHistory.push(...intakeContestaOConversacionalResultTemp.newItems.map((item) => item.rawItem));
+          appendNewItemsToHistory(intakeContestaOConversacionalResultTemp.newItems);
 
           if (!intakeContestaOConversacionalResultTemp.finalOutput) {
               throw new Error("Agent result is undefined");
@@ -7681,7 +7691,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...intakeContestaOResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(intakeContestaOResultTemp.newItems);
 
             if (!intakeContestaOResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -7708,7 +7718,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...contestaOPrepararBuscaQueryPackResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(contestaOPrepararBuscaQueryPackResultTemp.newItems);
 
             if (!contestaOPrepararBuscaQueryPackResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -7734,7 +7744,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...contestaOExtrairTemplateResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(contestaOExtrairTemplateResultTemp.newItems);
 
             if (!contestaOExtrairTemplateResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -7750,7 +7760,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...saDaJsonContestaOResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(saDaJsonContestaOResultTemp.newItems);
 
             if (!saDaJsonContestaOResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -7767,7 +7777,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...agentColetarDadosContestaOPerguntaNicaResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(agentColetarDadosContestaOPerguntaNicaResultTemp.newItems);
 
             if (!agentColetarDadosContestaOPerguntaNicaResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -7784,7 +7794,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
               ...conversationHistory
             ]
           );
-          conversationHistory.push(...intakeRPlicaConversacionalResultTemp.newItems.map((item) => item.rawItem));
+          appendNewItemsToHistory(intakeRPlicaConversacionalResultTemp.newItems);
 
           if (!intakeRPlicaConversacionalResultTemp.finalOutput) {
               throw new Error("Agent result is undefined");
@@ -7801,7 +7811,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...intakeRPlicaResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(intakeRPlicaResultTemp.newItems);
 
             if (!intakeRPlicaResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -7829,7 +7839,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...rPlicaPrepararBuscaQueryPackResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(rPlicaPrepararBuscaQueryPackResultTemp.newItems);
 
             if (!rPlicaPrepararBuscaQueryPackResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -7855,7 +7865,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...rPlicaSelecionarEvidNciasResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(rPlicaSelecionarEvidNciasResultTemp.newItems);
 
             if (!rPlicaSelecionarEvidNciasResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -7871,7 +7881,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...saDaJsonRPlicaResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(saDaJsonRPlicaResultTemp.newItems);
 
             if (!saDaJsonRPlicaResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -7888,7 +7898,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...agentColetarDadosRPlicaPerguntaNicaResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(agentColetarDadosRPlicaPerguntaNicaResultTemp.newItems);
 
             if (!agentColetarDadosRPlicaPerguntaNicaResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -7905,7 +7915,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
               ...conversationHistory
             ]
           );
-          conversationHistory.push(...intakeMemoriaisConversacionalResultTemp.newItems.map((item) => item.rawItem));
+          appendNewItemsToHistory(intakeMemoriaisConversacionalResultTemp.newItems);
 
           if (!intakeMemoriaisConversacionalResultTemp.finalOutput) {
               throw new Error("Agent result is undefined");
@@ -7922,7 +7932,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...intakeMemoriaisResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(intakeMemoriaisResultTemp.newItems);
 
             if (!intakeMemoriaisResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -7950,7 +7960,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...memoriaisPrepararBuscaQueryPackResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(memoriaisPrepararBuscaQueryPackResultTemp.newItems);
 
             if (!memoriaisPrepararBuscaQueryPackResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -7976,7 +7986,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...memoriaisSelecionarEExtrairTrechosResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(memoriaisSelecionarEExtrairTrechosResultTemp.newItems);
 
             if (!memoriaisSelecionarEExtrairTrechosResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -7992,7 +8002,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...saDaJsonMemoriaisResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(saDaJsonMemoriaisResultTemp.newItems);
 
             if (!saDaJsonMemoriaisResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -8009,7 +8019,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...agentColetarDadosMemoriaisPerguntaNicaResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(agentColetarDadosMemoriaisPerguntaNicaResultTemp.newItems);
 
             if (!agentColetarDadosMemoriaisPerguntaNicaResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -8026,7 +8036,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
               ...conversationHistory
             ]
           );
-          conversationHistory.push(...intakeRecursosConversacionalResultTemp.newItems.map((item) => item.rawItem));
+          appendNewItemsToHistory(intakeRecursosConversacionalResultTemp.newItems);
 
           if (!intakeRecursosConversacionalResultTemp.finalOutput) {
               throw new Error("Agent result is undefined");
@@ -8043,7 +8053,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...intakeRecursosResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(intakeRecursosResultTemp.newItems);
 
             if (!intakeRecursosResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -8071,7 +8081,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...recursosPrepararBuscaQueryPackResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(recursosPrepararBuscaQueryPackResultTemp.newItems);
 
             if (!recursosPrepararBuscaQueryPackResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -8097,7 +8107,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...recursosSelecionarEvidNciasResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(recursosSelecionarEvidNciasResultTemp.newItems);
 
             if (!recursosSelecionarEvidNciasResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -8113,7 +8123,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...saDaJsonRecursosResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(saDaJsonRecursosResultTemp.newItems);
 
             if (!saDaJsonRecursosResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -8130,7 +8140,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...agentColetarDadosRecursosPerguntaNicaResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(agentColetarDadosRecursosPerguntaNicaResultTemp.newItems);
 
             if (!agentColetarDadosRecursosPerguntaNicaResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -8147,7 +8157,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
               ...conversationHistory
             ]
           );
-          conversationHistory.push(...intakeContrarrazEsConversacionalResultTemp.newItems.map((item) => item.rawItem));
+          appendNewItemsToHistory(intakeContrarrazEsConversacionalResultTemp.newItems);
 
           if (!intakeContrarrazEsConversacionalResultTemp.finalOutput) {
               throw new Error("Agent result is undefined");
@@ -8164,7 +8174,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...intakeContrarrazEsResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(intakeContrarrazEsResultTemp.newItems);
 
             if (!intakeContrarrazEsResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -8192,7 +8202,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...contrarrazEsPrepararBuscaQueryPackResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(contrarrazEsPrepararBuscaQueryPackResultTemp.newItems);
 
             if (!contrarrazEsPrepararBuscaQueryPackResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -8218,7 +8228,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...contrarrazEsSelecionarEvidNciasResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(contrarrazEsSelecionarEvidNciasResultTemp.newItems);
 
             if (!contrarrazEsSelecionarEvidNciasResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -8234,7 +8244,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...saDaJsonContrarrazEsResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(saDaJsonContrarrazEsResultTemp.newItems);
 
             if (!saDaJsonContrarrazEsResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -8251,7 +8261,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...agentColetarDadosContrarrazEsPerguntaNicaResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(agentColetarDadosContrarrazEsPerguntaNicaResultTemp.newItems);
 
             if (!agentColetarDadosContrarrazEsPerguntaNicaResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -8268,7 +8278,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
               ...conversationHistory
             ]
           );
-          conversationHistory.push(...intakeCumprimentoDeSentenAConversacionalResultTemp.newItems.map((item) => item.rawItem));
+          appendNewItemsToHistory(intakeCumprimentoDeSentenAConversacionalResultTemp.newItems);
 
           if (!intakeCumprimentoDeSentenAConversacionalResultTemp.finalOutput) {
               throw new Error("Agent result is undefined");
@@ -8285,7 +8295,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...intakeCumprimentoDeSentenAResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(intakeCumprimentoDeSentenAResultTemp.newItems);
 
             if (!intakeCumprimentoDeSentenAResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -8313,7 +8323,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...cumprimentoDeSentenAPrepararBuscaQueryPackResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(cumprimentoDeSentenAPrepararBuscaQueryPackResultTemp.newItems);
 
             if (!cumprimentoDeSentenAPrepararBuscaQueryPackResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -8339,7 +8349,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...cumprimentoDeSentenASelecionarEvidNciasResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(cumprimentoDeSentenASelecionarEvidNciasResultTemp.newItems);
 
             if (!cumprimentoDeSentenASelecionarEvidNciasResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -8355,7 +8365,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...saDaJsonCumprimentoDeSentenAResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(saDaJsonCumprimentoDeSentenAResultTemp.newItems);
 
             if (!saDaJsonCumprimentoDeSentenAResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -8372,7 +8382,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...agentColetarDadosCumprimentoDeSentenAPerguntaNicaResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(agentColetarDadosCumprimentoDeSentenAPerguntaNicaResultTemp.newItems);
 
             if (!agentColetarDadosCumprimentoDeSentenAPerguntaNicaResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -8389,7 +8399,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
               ...conversationHistory
             ]
           );
-          conversationHistory.push(...intakePetiEsGeraisConversacionalResultTemp.newItems.map((item) => item.rawItem));
+          appendNewItemsToHistory(intakePetiEsGeraisConversacionalResultTemp.newItems);
 
           if (!intakePetiEsGeraisConversacionalResultTemp.finalOutput) {
               throw new Error("Agent result is undefined");
@@ -8406,7 +8416,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...intakePetiEsGeraisResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(intakePetiEsGeraisResultTemp.newItems);
 
             if (!intakePetiEsGeraisResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -8434,7 +8444,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...petiEsGeraisPrepararBuscaQueryPackResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(petiEsGeraisPrepararBuscaQueryPackResultTemp.newItems);
 
             if (!petiEsGeraisPrepararBuscaQueryPackResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -8460,7 +8470,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...petiEsGeraisSelecionarEvidNciasResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(petiEsGeraisSelecionarEvidNciasResultTemp.newItems);
 
             if (!petiEsGeraisSelecionarEvidNciasResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -8476,7 +8486,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...saDaJsonPetiEsGeraisResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(saDaJsonPetiEsGeraisResultTemp.newItems);
 
             if (!saDaJsonPetiEsGeraisResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -8493,7 +8503,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
                 ...conversationHistory
               ]
             );
-            conversationHistory.push(...agentColetarDadosPetiEsGeraisPerguntaNicaResultTemp.newItems.map((item) => item.rawItem));
+            appendNewItemsToHistory(agentColetarDadosPetiEsGeraisPerguntaNicaResultTemp.newItems);
 
             if (!agentColetarDadosPetiEsGeraisPerguntaNicaResultTemp.finalOutput) {
                 throw new Error("Agent result is undefined");
@@ -8510,7 +8520,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
               ...conversationHistory
             ]
           );
-          conversationHistory.push(...agentElseResultTemp.newItems.map((item) => item.rawItem));
+          appendNewItemsToHistory(agentElseResultTemp.newItems);
 
           if (!agentElseResultTemp.finalOutput) {
               throw new Error("Agent result is undefined");
@@ -8527,7 +8537,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
             ...conversationHistory
           ]
         );
-        conversationHistory.push(...intakeRevisarAlgoExistenteResultTemp.newItems.map((item) => item.rawItem));
+        appendNewItemsToHistory(intakeRevisarAlgoExistenteResultTemp.newItems);
 
         if (!intakeRevisarAlgoExistenteResultTemp.finalOutput) {
             throw new Error("Agent result is undefined");
@@ -8543,7 +8553,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
             ...conversationHistory
           ]
         );
-        conversationHistory.push(...intakePesquisarJurisprudNciaResultTemp.newItems.map((item) => item.rawItem));
+        appendNewItemsToHistory(intakePesquisarJurisprudNciaResultTemp.newItems);
 
         if (!intakePesquisarJurisprudNciaResultTemp.finalOutput) {
             throw new Error("Agent result is undefined");
@@ -8559,7 +8569,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
             ...conversationHistory
           ]
         );
-        conversationHistory.push(...perguntaGeralSResponderResultTemp.newItems.map((item) => item.rawItem));
+        appendNewItemsToHistory(perguntaGeralSResponderResultTemp.newItems);
 
         if (!perguntaGeralSResponderResultTemp.finalOutput) {
             throw new Error("Agent result is undefined");
@@ -8575,7 +8585,7 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
             ...conversationHistory
           ]
         );
-        conversationHistory.push(...fallbackSeguranAResultTemp.newItems.map((item) => item.rawItem));
+        appendNewItemsToHistory(fallbackSeguranAResultTemp.newItems);
 
         if (!fallbackSeguranAResultTemp.finalOutput) {
             throw new Error("Agent result is undefined");
