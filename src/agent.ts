@@ -69,6 +69,122 @@ async function scrubWorkflowInput(workflow: any, inputKey: string, piiOnly: any)
     workflow[inputKey] = getGuardrailSafeText(res, value);
 }
 
+function normalizeVectorSearchResults(data: any[]): Array<{
+  id: string;
+  filename: string;
+  score: number;
+  attributes: Record<string, unknown>;
+  text_preview: string;
+}> {
+  return (data ?? []).map((result: any) => {
+    const contentParts = Array.isArray(result?.content)
+      ? result.content
+      : (result?.content ? [result.content] : []);
+    const textPreview = contentParts
+      .map((part: any) => {
+        if (typeof part === "string") return part;
+        if (typeof part?.text === "string") return part.text;
+        if (typeof part?.content === "string") return part.content;
+        if (typeof part?.value === "string") return part.value;
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n")
+      .slice(0, 4000);
+
+    return {
+      id: result?.file_id ?? "",
+      filename: result?.filename ?? "",
+      score: Number(result?.score ?? 0),
+      attributes: result?.attributes ?? {},
+      text_preview: textPreview
+    };
+  });
+}
+
+function buildFallbackSections(docType: string, inputText: string) {
+  const resumo = (inputText ?? "").trim().slice(0, 2500) || "Dados fornecidos pelo usuário para elaboração da peça.";
+  const tituloTipo: Record<string, string> = {
+    iniciais: "PETIÇÃO INICIAL",
+    contestacao: "CONTESTAÇÃO",
+    replica: "RÉPLICA",
+    memoriais: "MEMORIAIS",
+    recursos: "RECURSO",
+    contrarrazoes: "CONTRARRAZÕES",
+    cumprimento_de_sentenca: "CUMPRIMENTO DE SENTENÇA",
+    peticoes_gerais: "PETIÇÃO"
+  };
+  const title = tituloTipo[docType] ?? "PEÇA JURÍDICA";
+  const typeSpecificBlockId: Record<string, string> = {
+    iniciais: "qualificacao_partes",
+    contestacao: "merito_impugnacao",
+    replica: "impugnacao_merito",
+    memoriais: "pontos_controvertidos_tese",
+    recursos: "razoes_recursais",
+    contrarrazoes: "rebater_fundamentos",
+    cumprimento_de_sentenca: "demonstrativo_debito",
+    peticoes_gerais: "pedido_direto_fundamento"
+  };
+
+  return [
+    {
+      ordem: 1,
+      titulo_literal: "EXCELENTÍSSIMO(A) SENHOR(A) JUIZ(A) DE DIREITO",
+      blocks: [
+        { block_id: "enderecamento", type: "paragraph", text: "EXCELENTÍSSIMO(A) SENHOR(A) JUIZ(A) DE DIREITO", ordered: false, items: [], rows: [], source: "fallback_without_filesearch_text" }
+      ]
+    },
+    {
+      ordem: 2,
+      titulo_literal: title,
+      blocks: [
+        { block_id: "titulo_peca", type: "paragraph", text: title, ordered: false, items: [], rows: [], source: "fallback_without_filesearch_text" }
+      ]
+    },
+    {
+      ordem: 3,
+      titulo_literal: "SÍNTESE FÁTICA",
+      blocks: [
+        { block_id: "sintese_fatica", type: "paragraph", text: resumo, ordered: false, items: [], rows: [], source: "user_input" }
+      ]
+    },
+    {
+      ordem: 4,
+      titulo_literal: "FUNDAMENTAÇÃO E IMPUGNAÇÃO",
+      blocks: [
+        { block_id: typeSpecificBlockId[docType] ?? "fundamentacao_juridica", type: "paragraph", text: "Com base nos fatos narrados e nos documentos do caso, requer-se a análise técnica e jurídica para acolhimento das teses da presente peça.", ordered: false, items: [], rows: [], source: "fallback_without_filesearch_text" }
+      ]
+    },
+    {
+      ordem: 5,
+      titulo_literal: "PEDIDOS",
+      blocks: [
+        { block_id: "pedidos_finais", type: "list", text: "", ordered: false, items: ["Recebimento da presente peça;", "Apreciação integral das teses expostas;", "Julgamento conforme os pedidos formulados no caso concreto."], rows: [], source: "fallback_without_filesearch_text" }
+      ]
+    },
+    {
+      ordem: 6,
+      titulo_literal: "Termos em que, pede deferimento.",
+      blocks: [
+        { block_id: "fecho", type: "paragraph", text: "Termos em que, pede deferimento.\nCidade, [PREENCHER: data].", ordered: false, items: [], rows: [], source: "fallback_without_filesearch_text" },
+        { block_id: "local_data_assinatura_oab", type: "paragraph", text: "Cidade, [PREENCHER: data].", ordered: false, items: [], rows: [], source: "fallback_without_filesearch_text" }
+      ]
+    }
+  ];
+}
+
+function ensureNonEmptySections(output: any, inputText: string) {
+  if (!output || typeof output !== "object") return output;
+  const docType = output?.doc_type;
+  const sections = output?.doc?.sections;
+  if (!Array.isArray(sections) || sections.length > 0) return output;
+  output.doc.sections = buildFallbackSections(String(docType ?? ""), inputText);
+  if (output?.meta && Array.isArray(output.meta.warnings)) {
+    output.meta.warnings.push("FALLBACK: sections geradas a partir do intake por ausência de conteúdo textual útil do File Search.");
+  }
+  return output;
+}
+
 async function runAndApplyGuardrails(inputText: string, config: any, history: any[], workflow: any) {
     const guardrails = Array.isArray(config?.guardrails) ? config.guardrails : [];
     const results = await runGuardrails(inputText, config, context, true);
@@ -7408,14 +7524,9 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               output_text: JSON.stringify(iniciaisPrepararBuscaQueryPackResultTemp.finalOutput),
               output_parsed: iniciaisPrepararBuscaQueryPackResultTemp.finalOutput
             };
-            const filesearchResult = (await client.vectorStores.search("vs_697142e9fef08191855b1ab1e548eb8a", {query: iniciaisPrepararBuscaQueryPackResult.output_parsed.consulta_pronta,
-            max_num_results: 20})).data.map((result) => {
-              return {
-                id: result.file_id,
-                filename: result.filename,
-                score: result.score,
-              }
-            });
+            const vectorSearchRaw = (await client.vectorStores.search("vs_697142e9fef08191855b1ab1e548eb8a", {query: iniciaisPrepararBuscaQueryPackResult.output_parsed.consulta_pronta,
+            max_num_results: 20})).data;
+            const filesearchResult = normalizeVectorSearchResults(vectorSearchRaw);
             conversationHistory.push({
               role: "system",
               content: "File search results:\n" + JSON.stringify(filesearchResult, null, 2)
@@ -7519,14 +7630,9 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               output_text: JSON.stringify(contestaOPrepararBuscaQueryPackResultTemp.finalOutput),
               output_parsed: contestaOPrepararBuscaQueryPackResultTemp.finalOutput
             };
-            const filesearchResult = (await client.vectorStores.search("vs_69710dd50f088191a6d68298cda18ff7", {query: contestaOPrepararBuscaQueryPackResult.output_parsed.consulta_pronta,
-            max_num_results: 20})).data.map((result) => {
-              return {
-                id: result.file_id,
-                filename: result.filename,
-                score: result.score,
-              }
-            });
+            const vectorSearchRaw = (await client.vectorStores.search("vs_69710dd50f088191a6d68298cda18ff7", {query: contestaOPrepararBuscaQueryPackResult.output_parsed.consulta_pronta,
+            max_num_results: 20})).data;
+            const filesearchResult = normalizeVectorSearchResults(vectorSearchRaw);
             conversationHistory.push({
               role: "system",
               content: "File search results:\n" + JSON.stringify(filesearchResult, null, 2)
@@ -7630,14 +7736,9 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               output_text: JSON.stringify(rPlicaPrepararBuscaQueryPackResultTemp.finalOutput),
               output_parsed: rPlicaPrepararBuscaQueryPackResultTemp.finalOutput
             };
-            const filesearchResult = (await client.vectorStores.search("vs_69711e8bee9c81919a906590740b1494", {query: rPlicaPrepararBuscaQueryPackResult.output_parsed.consulta_pronta,
-            max_num_results: 20})).data.map((result) => {
-              return {
-                id: result.file_id,
-                filename: result.filename,
-                score: result.score,
-              }
-            });
+            const vectorSearchRaw = (await client.vectorStores.search("vs_69711e8bee9c81919a906590740b1494", {query: rPlicaPrepararBuscaQueryPackResult.output_parsed.consulta_pronta,
+            max_num_results: 20})).data;
+            const filesearchResult = normalizeVectorSearchResults(vectorSearchRaw);
             conversationHistory.push({
               role: "system",
               content: "File search results:\n" + JSON.stringify(filesearchResult, null, 2)
@@ -7741,14 +7842,9 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               output_text: JSON.stringify(memoriaisPrepararBuscaQueryPackResultTemp.finalOutput),
               output_parsed: memoriaisPrepararBuscaQueryPackResultTemp.finalOutput
             };
-            const filesearchResult = (await client.vectorStores.search("vs_69718130d25c8191b15e4317a3e0447a", {query: memoriaisPrepararBuscaQueryPackResult.output_parsed.consulta_pronta,
-            max_num_results: 20})).data.map((result) => {
-              return {
-                id: result.file_id,
-                filename: result.filename,
-                score: result.score,
-              }
-            });
+            const vectorSearchRaw = (await client.vectorStores.search("vs_69718130d25c8191b15e4317a3e0447a", {query: memoriaisPrepararBuscaQueryPackResult.output_parsed.consulta_pronta,
+            max_num_results: 20})).data;
+            const filesearchResult = normalizeVectorSearchResults(vectorSearchRaw);
             conversationHistory.push({
               role: "system",
               content: "File search results:\n" + JSON.stringify(filesearchResult, null, 2)
@@ -7852,14 +7948,9 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               output_text: JSON.stringify(recursosPrepararBuscaQueryPackResultTemp.finalOutput),
               output_parsed: recursosPrepararBuscaQueryPackResultTemp.finalOutput
             };
-            const filesearchResult = (await client.vectorStores.search("vs_697128383c948191ae4731db3b8cf8cf", {query: recursosPrepararBuscaQueryPackResult.output_parsed.consulta_pronta,
-            max_num_results: 20})).data.map((result) => {
-              return {
-                id: result.file_id,
-                filename: result.filename,
-                score: result.score,
-              }
-            });
+            const vectorSearchRaw = (await client.vectorStores.search("vs_697128383c948191ae4731db3b8cf8cf", {query: recursosPrepararBuscaQueryPackResult.output_parsed.consulta_pronta,
+            max_num_results: 20})).data;
+            const filesearchResult = normalizeVectorSearchResults(vectorSearchRaw);
             conversationHistory.push({
               role: "system",
               content: "File search results:\n" + JSON.stringify(filesearchResult, null, 2)
@@ -7963,14 +8054,9 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               output_text: JSON.stringify(contrarrazEsPrepararBuscaQueryPackResultTemp.finalOutput),
               output_parsed: contrarrazEsPrepararBuscaQueryPackResultTemp.finalOutput
             };
-            const filesearchResult = (await client.vectorStores.search("vs_69713067d3648191944078f1c0103dd1", {query: contrarrazEsPrepararBuscaQueryPackResult.output_parsed.consulta_pronta,
-            max_num_results: 20})).data.map((result) => {
-              return {
-                id: result.file_id,
-                filename: result.filename,
-                score: result.score,
-              }
-            });
+            const vectorSearchRaw = (await client.vectorStores.search("vs_69713067d3648191944078f1c0103dd1", {query: contrarrazEsPrepararBuscaQueryPackResult.output_parsed.consulta_pronta,
+            max_num_results: 20})).data;
+            const filesearchResult = normalizeVectorSearchResults(vectorSearchRaw);
             conversationHistory.push({
               role: "system",
               content: "File search results:\n" + JSON.stringify(filesearchResult, null, 2)
@@ -8074,14 +8160,9 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               output_text: JSON.stringify(cumprimentoDeSentenAPrepararBuscaQueryPackResultTemp.finalOutput),
               output_parsed: cumprimentoDeSentenAPrepararBuscaQueryPackResultTemp.finalOutput
             };
-            const filesearchResult = (await client.vectorStores.search("vs_69713a6681f481919c00eee7d69026d1", {query: cumprimentoDeSentenAPrepararBuscaQueryPackResult.output_parsed.consulta_pronta,
-            max_num_results: 20})).data.map((result) => {
-              return {
-                id: result.file_id,
-                filename: result.filename,
-                score: result.score,
-              }
-            });
+            const vectorSearchRaw = (await client.vectorStores.search("vs_69713a6681f481919c00eee7d69026d1", {query: cumprimentoDeSentenAPrepararBuscaQueryPackResult.output_parsed.consulta_pronta,
+            max_num_results: 20})).data;
+            const filesearchResult = normalizeVectorSearchResults(vectorSearchRaw);
             conversationHistory.push({
               role: "system",
               content: "File search results:\n" + JSON.stringify(filesearchResult, null, 2)
@@ -8185,14 +8266,9 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               output_text: JSON.stringify(petiEsGeraisPrepararBuscaQueryPackResultTemp.finalOutput),
               output_parsed: petiEsGeraisPrepararBuscaQueryPackResultTemp.finalOutput
             };
-            const filesearchResult = (await client.vectorStores.search("vs_69718200f9148191b85c707e239aa367", {query: petiEsGeraisPrepararBuscaQueryPackResult.output_parsed.consulta_pronta,
-            max_num_results: 20})).data.map((result) => {
-              return {
-                id: result.file_id,
-                filename: result.filename,
-                score: result.score,
-              }
-            });
+            const vectorSearchRaw = (await client.vectorStores.search("vs_69718200f9148191b85c707e239aa367", {query: petiEsGeraisPrepararBuscaQueryPackResult.output_parsed.consulta_pronta,
+            max_num_results: 20})).data;
+            const filesearchResult = normalizeVectorSearchResults(vectorSearchRaw);
             conversationHistory.push({
               role: "system",
               content: "File search results:\n" + JSON.stringify(filesearchResult, null, 2)
@@ -8329,6 +8405,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
         };
       }
     }
-    return lastFinalOutput ?? { error: "no_output", message: "Workflow did not return output." };
+    const finalOutput = lastFinalOutput ?? { error: "no_output", message: "Workflow did not return output." };
+    return ensureNonEmptySections(finalOutput, workflow.input_as_text);
   });
 }
