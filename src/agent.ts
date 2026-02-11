@@ -182,8 +182,6 @@ Você deve retornar APENAS o JSON final.
   model: MODEL_LIGHT,
   outputType: ClassifyUserIntentSchema,
   modelSettings: {
-    temperature: 0.05,
-    topP: 0.2,
     maxTokens: 12000,
     store: true
   }
@@ -327,8 +325,6 @@ Nenhum texto fora do JSON.`,
   ],
   outputType: IntakeContestaOConversacionalSchema,
   modelSettings: {
-    temperature: 0.2,
-    topP: 0.29,
     maxTokens: 12000,
     store: true
   }
@@ -475,8 +471,6 @@ Nada fora do JSON.`,
   model: MODEL_DEFAULT,
   outputType: IntakeRPlicaConversacionalSchema,
   modelSettings: {
-    temperature: 0.21,
-    topP: 0.29,
     maxTokens: 12000,
     store: true
   }
@@ -524,8 +518,6 @@ Regras finais:
   model: MODEL_LIGHT,
   outputType: AgenteClassificadorStageSchema,
   modelSettings: {
-    temperature: 0,
-    topP: 0.1,
     maxTokens: 12000,
     store: true
   }
@@ -559,8 +551,6 @@ O usuário deve responder escolhendo uma dessas opções.
 `,
   model: MODEL_DEFAULT,
   modelSettings: {
-    temperature: 0.2,
-    topP: 0.3,
     maxTokens: 12000,
     store: true
   }
@@ -595,8 +585,6 @@ Objetivo principal:
 - Ajudar o usuário a decidir o próximo passo correto, não apenas responder por responder.`,
   model: MODEL_DEFAULT,
   modelSettings: {
-    temperature: 1,
-    topP: 1,
     maxTokens: 12000,
     store: true
   }
@@ -661,8 +649,6 @@ Saída obrigatória em JSON:
 `,
   model: MODEL_DEFAULT,
   modelSettings: {
-    temperature: 0.2,
-    topP: 0.3,
     maxTokens: 12000,
     store: true
   }
@@ -823,8 +809,6 @@ Sem risco de erro material ou precedente falso
     webSearchPreview
   ],
   modelSettings: {
-    temperature: 0.1,
-    topP: 0.3,
     maxTokens: 12000,
     store: true
   }
@@ -856,8 +840,6 @@ Regras:
 - Seja educado, claro e direto.`,
   model: MODEL_DEFAULT,
   modelSettings: {
-    temperature: 0.2,
-    topP: 1,
     maxTokens: 12000,
     store: true
   }
@@ -929,8 +911,6 @@ SAÍDA
   model: MODEL_DEFAULT,
   outputType: IniciaisPrepararBuscaQueryPackSchema,
   modelSettings: {
-    temperature: 0.05,
-    topP: 0.31,
     maxTokens: 12000,
     store: true
   }
@@ -1134,8 +1114,6 @@ REGRAS ABSOLUTAS (SEM EXCEÇÃO)
   model: MODEL_DEFAULT,
   outputType: IniciaisSelecionarEExtrairTrechosSchema,
   modelSettings: {
-    temperature: 0.18,
-    topP: 1,
     maxTokens: 12000,
     store: true
   }
@@ -1231,8 +1209,6 @@ Nenhum texto fora do JSON.`,
   model: MODEL_DEFAULT,
   outputType: ContestaOPrepararBuscaQueryPackSchema,
   modelSettings: {
-    temperature: 0.19,
-    topP: 0.9,
     maxTokens: 12000,
     store: true
   }
@@ -1487,8 +1463,6 @@ REGRAS ABSOLUTAS (SEM EXCEÇÃO)
   model: MODEL_DEFAULT,
   outputType: ContestaOExtrairTemplateSchema,
   modelSettings: {
-    temperature: 0.21,
-    topP: 0.87,
     maxTokens: 12000,
     store: true
   }
@@ -1526,8 +1500,6 @@ Preenchimento:
   model: MODEL_DEFAULT,
   outputType: IntakeIniciaisSchema,
   modelSettings: {
-    temperature: 0.2,
-    topP: 0.2,
     maxTokens: 12000,
     store: true
   }
@@ -1657,8 +1629,6 @@ Você precisa ter (de forma explícita OU por inferência permitida):
   model: MODEL_DEFAULT,
   outputType: IntakeIniciaisConversationalSchema,
   modelSettings: {
-    temperature: 0.22,
-    topP: 1,
     maxTokens: 12000,
     store: true
   }
@@ -1689,8 +1659,6 @@ Aguarde a resposta do usuário. Não faça mais perguntas nesta mensagem.
 `,
   model: MODEL_DEFAULT,
   modelSettings: {
-    temperature: 1,
-    topP: 1,
     maxTokens: 12000,
     store: true
   }
@@ -1755,8 +1723,6 @@ Seu trabalho é transformar a conversa em um caso estruturado e marcar exatament
   model: MODEL_DEFAULT,
   outputType: IntakeContestaOSchema,
   modelSettings: {
-    temperature: 0.2,
-    topP: 0.2,
     maxTokens: 12000,
     store: true
   }
@@ -1807,8 +1773,6 @@ Aguarde a resposta do usuário. Não faça mais perguntas nesta mensagem.
 `,
   model: MODEL_DEFAULT,
   modelSettings: {
-    temperature: 0.23,
-    topP: 0.7,
     maxTokens: 12000,
     store: true
   }
@@ -1865,8 +1829,6 @@ Lembre-se: Seu trabalho é transformar a conversa em um caso estruturado e marca
   model: MODEL_DEFAULT,
   outputType: IntakeRPlicaSchema,
   modelSettings: {
-    temperature: 0.21,
-    topP: 0.31,
     maxTokens: 12000,
     store: true
   }
@@ -2021,8 +1983,6 @@ Nenhum texto fora do JSON.
   model: MODEL_DEFAULT,
   outputType: RPlicaPrepararBuscaQueryPackSchema,
   modelSettings: {
-    temperature: 0.1,
-    topP: 0.69,
     maxTokens: 12000,
     store: true
   }
@@ -2073,8 +2033,6 @@ Aguarde a resposta do usuário. Não faça mais perguntas nesta mensagem.
 `,
   model: MODEL_DEFAULT,
   modelSettings: {
-    temperature: 0.23,
-    topP: 0.71,
     maxTokens: 12000,
     store: true
   }
@@ -2329,8 +2287,6 @@ REGRAS ABSOLUTAS (SEM EXCEÇÃO)
   model: MODEL_DEFAULT,
   outputType: RPlicaSelecionarEvidNciasSchema,
   modelSettings: {
-    temperature: 0.19,
-    topP: 0.79,
     maxTokens: 12000,
     store: true
   }
@@ -2489,8 +2445,6 @@ Nada fora do JSON.
   model: MODEL_DEFAULT,
   outputType: IntakeMemoriaisConversacionalSchema,
   modelSettings: {
-    temperature: 0.21,
-    topP: 0.29,
     maxTokens: 12000,
     store: true
   }
@@ -2570,8 +2524,6 @@ memoriais_intake_pack
   model: MODEL_DEFAULT,
   outputType: IntakeMemoriaisSchema,
   modelSettings: {
-    temperature: 0.21,
-    topP: 0.31,
     maxTokens: 12000,
     store: true
   }
@@ -2696,8 +2648,6 @@ Se o volume de acervo for pequeno, ampliar para 5 anos.`,
   model: MODEL_DEFAULT,
   outputType: MemoriaisPrepararBuscaQueryPackSchema,
   modelSettings: {
-    temperature: 0.1,
-    topP: 0.69,
     maxTokens: 12000,
     store: true
   }
@@ -2734,8 +2684,6 @@ Para eu conseguir finalizar os memoriais, complete de uma vez só (copie e preen
 Aguarde a resposta do usuário. Não faça mais perguntas nesta mensagem.`,
   model: MODEL_DEFAULT,
   modelSettings: {
-    temperature: 0.23,
-    topP: 0.71,
     maxTokens: 12000,
     store: true
   }
@@ -2952,8 +2900,6 @@ REGRAS ABSOLUTAS (SEM EXCEÇÃO)
   model: MODEL_DEFAULT,
   outputType: MemoriaisSelecionarEExtrairTrechosSchema,
   modelSettings: {
-    temperature: 0.19,
-    topP: 0.79,
     maxTokens: 12000,
     store: true
   }
@@ -3139,8 +3085,6 @@ Nada fora do JSON.`,
   model: MODEL_DEFAULT,
   outputType: IntakeRecursosConversacionalSchema,
   modelSettings: {
-    temperature: 0.21,
-    topP: 0.29,
     maxTokens: 12000,
     store: true
   }
@@ -3219,8 +3163,6 @@ recurso_intake_pack
   model: MODEL_DEFAULT,
   outputType: IntakeRecursosSchema,
   modelSettings: {
-    temperature: 0.21,
-    topP: 0.31,
     maxTokens: 12000,
     store: true
   }
@@ -3296,8 +3238,6 @@ SAÍDA
   model: MODEL_DEFAULT,
   outputType: RecursosPrepararBuscaQueryPackSchema,
   modelSettings: {
-    temperature: 0.1,
-    topP: 0.69,
     maxTokens: 12000,
     store: true
   }
@@ -3349,8 +3289,6 @@ Não faça mais perguntas nesta mensagem.
 `,
   model: MODEL_DEFAULT,
   modelSettings: {
-    temperature: 0.23,
-    topP: 0.71,
     maxTokens: 12000,
     store: true
   }
@@ -3600,8 +3538,6 @@ REGRAS ABSOLUTAS (SEM EXCEÇÃO)
   model: MODEL_DEFAULT,
   outputType: RecursosSelecionarEvidNciasSchema,
   modelSettings: {
-    temperature: 0.19,
-    topP: 0.79,
     maxTokens: 12000,
     store: true
   }
@@ -3795,8 +3731,6 @@ Nada fora do JSON.`,
   model: MODEL_DEFAULT,
   outputType: IntakeContrarrazEsConversacionalSchema,
   modelSettings: {
-    temperature: 0.21,
-    topP: 0.29,
     maxTokens: 12000,
     store: true
   }
@@ -3879,8 +3813,6 @@ Seu trabalho é transformar a conversa em um caso estruturado e marcar exatament
   model: MODEL_DEFAULT,
   outputType: IntakeContrarrazEsSchema,
   modelSettings: {
-    temperature: 0.21,
-    topP: 0.31,
     maxTokens: 12000,
     store: true
   }
@@ -3975,8 +3907,6 @@ Sem texto fora do JSON.`,
   model: MODEL_DEFAULT,
   outputType: ContrarrazEsPrepararBuscaQueryPackSchema,
   modelSettings: {
-    temperature: 0.1,
-    topP: 0.69,
     maxTokens: 12000,
     store: true
   }
@@ -4029,8 +3959,6 @@ Não faça mais perguntas nesta mensagem.
 `,
   model: MODEL_DEFAULT,
   modelSettings: {
-    temperature: 0.23,
-    topP: 0.71,
     maxTokens: 12000,
     store: true
   }
@@ -4237,8 +4165,6 @@ Nada mais.`,
   model: MODEL_DEFAULT,
   outputType: ContrarrazEsSelecionarEvidNciasSchema,
   modelSettings: {
-    temperature: 0.19,
-    topP: 0.79,
     maxTokens: 12000,
     store: true
   }
@@ -4395,8 +4321,6 @@ Nada fora do JSON.`,
   model: MODEL_DEFAULT,
   outputType: IntakeCumprimentoDeSentenAConversacionalSchema,
   modelSettings: {
-    temperature: 0.21,
-    topP: 0.29,
     maxTokens: 12000,
     store: true
   }
@@ -4478,8 +4402,6 @@ cumprimento_sentenca_intake_pack
   model: MODEL_DEFAULT,
   outputType: IntakeCumprimentoDeSentenASchema,
   modelSettings: {
-    temperature: 0.21,
-    topP: 0.31,
     maxTokens: 12000,
     store: true
   }
@@ -4604,8 +4526,6 @@ Retorne apenas o JSON do schema do node, preenchendo com o máximo de especifici
   model: MODEL_DEFAULT,
   outputType: CumprimentoDeSentenAPrepararBuscaQueryPackSchema,
   modelSettings: {
-    temperature: 0.1,
-    topP: 0.69,
     maxTokens: 12000,
     store: true
   }
@@ -4655,8 +4575,6 @@ Não faça mais perguntas nesta mensagem.
 `,
   model: MODEL_DEFAULT,
   modelSettings: {
-    temperature: 0.23,
-    topP: 0.71,
     maxTokens: 12000,
     store: true
   }
@@ -4819,8 +4737,6 @@ Não responda em texto livre.`,
   model: MODEL_DEFAULT,
   outputType: CumprimentoDeSentenASelecionarEvidNciasSchema,
   modelSettings: {
-    temperature: 0.19,
-    topP: 0.79,
     maxTokens: 12000,
     store: true
   }
@@ -4972,8 +4888,6 @@ Nada fora do JSON.`,
   model: MODEL_DEFAULT,
   outputType: IntakePetiEsGeraisConversacionalSchema,
   modelSettings: {
-    temperature: 0.21,
-    topP: 0.29,
     maxTokens: 12000,
     store: true
   }
@@ -5057,8 +4971,6 @@ Você NÃO escreve a petição. Você apenas prepara o caso para busca e redaç�
   model: MODEL_DEFAULT,
   outputType: IntakePetiEsGeraisSchema,
   modelSettings: {
-    temperature: 0.21,
-    topP: 0.31,
     maxTokens: 12000,
     store: true
   }
@@ -5205,8 +5117,6 @@ Retorne APENAS um JSON válido conforme o schema \"cumprimento_sentenca_query_pa
   model: MODEL_DEFAULT,
   outputType: PetiEsGeraisPrepararBuscaQueryPackSchema,
   modelSettings: {
-    temperature: 0.1,
-    topP: 0.69,
     maxTokens: 12000,
     store: true
   }
@@ -5255,8 +5165,6 @@ Aguarde a resposta do usuário.
 Não faça mais perguntas nesta mensagem.`,
   model: MODEL_DEFAULT,
   modelSettings: {
-    temperature: 0.23,
-    topP: 0.71,
     maxTokens: 12000,
     store: true
   }
@@ -5391,8 +5299,6 @@ Retorne APENAS o JSON estritamente válido conforme o schema \"peticoes_gerais_s
   model: MODEL_DEFAULT,
   outputType: PetiEsGeraisSelecionarEvidNciasSchema,
   modelSettings: {
-    temperature: 0.19,
-    topP: 0.79,
     maxTokens: 12000,
     store: true
   }
@@ -5685,8 +5591,6 @@ Nenhum texto fora do JSON.`,
   model: MODEL_FINAL_JSON,
   outputType: SaDaJsonIniciaisSchema,
   modelSettings: {
-    temperature: 0,
-    topP: 0.22,
     maxTokens: 12000,
     store: true
   }
@@ -5973,8 +5877,6 @@ Nenhum texto fora do JSON.`,
   model: MODEL_FINAL_JSON,
   outputType: SaDaJsonContestaOSchema,
   modelSettings: {
-    temperature: 0,
-    topP: 0.22,
     maxTokens: 12000,
     store: true
   }
@@ -6196,8 +6098,6 @@ Nenhum texto fora do JSON.`,
   model: MODEL_FINAL_JSON,
   outputType: SaDaJsonRPlicaSchema,
   modelSettings: {
-    temperature: 0,
-    topP: 0.22,
     maxTokens: 12000,
     store: true
   }
@@ -6419,8 +6319,6 @@ Nenhum texto fora do JSON.`,
   model: MODEL_FINAL_JSON,
   outputType: SaDaJsonMemoriaisSchema,
   modelSettings: {
-    temperature: 0,
-    topP: 0.22,
     maxTokens: 12000,
     store: true
   }
@@ -6650,8 +6548,6 @@ Nenhum texto fora do JSON.`,
   model: MODEL_FINAL_JSON,
   outputType: SaDaJsonRecursosSchema,
   modelSettings: {
-    temperature: 0,
-    topP: 0.22,
     maxTokens: 12000,
     store: true
   }
@@ -6882,8 +6778,6 @@ Nenhum texto fora do JSON.`,
   model: MODEL_FINAL_JSON,
   outputType: SaDaJsonContrarrazEsSchema,
   modelSettings: {
-    temperature: 0,
-    topP: 0.22,
     maxTokens: 12000,
     store: true
   }
@@ -7116,8 +7010,6 @@ Nenhum texto fora do JSON.`,
   model: MODEL_FINAL_JSON,
   outputType: SaDaJsonCumprimentoDeSentenASchema,
   modelSettings: {
-    temperature: 0,
-    topP: 0.22,
     maxTokens: 12000,
     store: true
   }
@@ -7351,8 +7243,6 @@ Nenhum texto fora do JSON.`,
   model: MODEL_FINAL_JSON,
   outputType: SaDaJsonPetiEsGeraisSchema,
   modelSettings: {
-    temperature: 0,
-    topP: 0.22,
     maxTokens: 12000,
     store: true
   }
