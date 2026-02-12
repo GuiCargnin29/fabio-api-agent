@@ -7446,9 +7446,65 @@ export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflow
 
     userContent.push({ role: "user", content: messageContent });
     const conversationHistory: AgentInputItem[] = [...userContent];
+    const extractText = (value: any): string => {
+      if (typeof value === "string") return value;
+      if (Array.isArray(value)) return value.map(extractText).filter(Boolean).join("\n");
+      if (!value || typeof value !== "object") return "";
+      if (value.type === "reasoning") return "";
+      if (typeof value.text === "string") return value.text;
+      if (typeof value.output_text === "string") return value.output_text;
+      if (typeof value.content === "string") return value.content;
+      if (typeof value.value === "string") return value.value;
+      if (Array.isArray(value.content)) return extractText(value.content);
+      if (Array.isArray(value.summary)) return extractText(value.summary);
+      return "";
+    };
+    const sanitizeHistoryItem = (item: any): any | null => {
+      if (!item || typeof item !== "object") return null;
+      if (item.type === "reasoning") return null;
+
+      const role = item.role;
+      if (role === "system" || role === "assistant") {
+        const text = extractText(item.content).trim();
+        if (!text) return null;
+        return { role, content: text };
+      }
+
+      if (role === "user") {
+        if (typeof item.content === "string") return { role: "user", content: item.content };
+        if (Array.isArray(item.content)) {
+          const parts = item.content
+            .map((part: any) => {
+              if (!part || typeof part !== "object") return null;
+              if (part.type === "reasoning") return null;
+              if (part.type === "input_file" && typeof part?.file?.id === "string") {
+                return { type: "input_file" as const, file: { id: part.file.id } };
+              }
+              if (part.type === "input_text" && typeof part.text === "string") {
+                return { type: "input_text" as const, text: part.text };
+              }
+              const text = extractText(part).trim();
+              if (!text) return null;
+              return { type: "input_text" as const, text };
+            })
+            .filter(Boolean);
+          if (parts.length === 0) return null;
+          return { role: "user", content: parts };
+        }
+        const text = extractText(item.content).trim();
+        if (!text) return null;
+        return { role: "user", content: text };
+      }
+
+      if (item.type === "message" && (item.role === "user" || item.role === "assistant" || item.role === "system")) {
+        return sanitizeHistoryItem({ role: item.role, content: item.content });
+      }
+
+      return null;
+    };
     const sanitizeHistoryItems = (items: any[]): any[] => {
       if (!Array.isArray(items)) return [];
-      return items.filter((item) => item && item.type !== "reasoning");
+      return items.map(sanitizeHistoryItem).filter(Boolean);
     };
     const appendNewItemsToHistory = (newItems: any[]) => {
       const rawItems = Array.isArray(newItems) ? newItems.map((item) => item?.rawItem).filter(Boolean) : [];
