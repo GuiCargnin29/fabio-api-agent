@@ -1,13 +1,9 @@
-import { fileSearchTool, webSearchTool, Agent, AgentInputItem, Runner, withTrace } from "@openai/agents";
+import { webSearchTool, Agent, AgentInputItem, Runner, withTrace } from "@openai/agents";
 import { OpenAI } from "openai";
-import { runGuardrails } from "@openai/guardrails";
 import { z } from "zod";
 
 
 // Tool definitions
-const fileSearch = fileSearchTool([
-  "vs_69710dd50f088191a6d68298cda18ff7"
-])
 const webSearchPreview = webSearchTool({
   searchContextSize: "high",
   userLocation: {
@@ -19,255 +15,49 @@ const webSearchPreview = webSearchTool({
 })
 
 // Shared client for guardrails and file search
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, timeout: 120000 });
-
-const MODEL_LIGHT = process.env.MODEL_LIGHT ?? "gpt-5-nano";
-const MODEL_DEFAULT = process.env.MODEL_DEFAULT ?? "gpt-5-mini";
-const MODEL_FINAL_JSON = process.env.MODEL_FINAL_JSON ?? "gpt-5.1";
-
-// Guardrails definitions
-const guardrailsConfig = {
-  guardrails: [
-    { name: "Moderation", config: { categories: ["sexual/minors", "hate/threatening", "harassment/threatening", "self-harm/instructions", "violence/graphic", "illicit/violent"] } },
-    { name: "Jailbreak", config: { model: "gpt-4.1-mini", confidence_threshold: 0.7 } },
-    { name: "Prompt Injection Detection", config: { model: "gpt-4.1-mini", confidence_threshold: 0.7 } }
-  ]
-};
-const context = { guardrailLlm: client };
-
-function guardrailsHasTripwire(results: any[]): boolean {
-    return (results ?? []).some((r) => r?.tripwireTriggered === true);
-}
-
-function getGuardrailSafeText(results: any[], fallbackText: string): string {
-    for (const r of results ?? []) {
-        if (r?.info && ("checked_text" in r.info)) {
-            return r.info.checked_text ?? fallbackText;
-        }
-    }
-    const pii = (results ?? []).find((r) => r?.info && "anonymized_text" in r.info);
-    return pii?.info?.anonymized_text ?? fallbackText;
-}
-
-async function scrubConversationHistory(history: any[], piiOnly: any): Promise<void> {
-    for (const msg of history ?? []) {
-        const content = Array.isArray(msg?.content) ? msg.content : [];
-        for (const part of content) {
-            if (part && typeof part === "object" && part.type === "input_text" && typeof part.text === "string") {
-                const res = await runGuardrails(part.text, piiOnly, context, true);
-                part.text = getGuardrailSafeText(res, part.text);
-            }
-        }
-    }
-}
-
-async function scrubWorkflowInput(workflow: any, inputKey: string, piiOnly: any): Promise<void> {
-    if (!workflow || typeof workflow !== "object") return;
-    const value = workflow?.[inputKey];
-    if (typeof value !== "string") return;
-    const res = await runGuardrails(value, piiOnly, context, true);
-    workflow[inputKey] = getGuardrailSafeText(res, value);
-}
-
-function normalizeVectorSearchResults(data: any[]): Array<{
-  id: string;
-  filename: string;
-  score: number;
-  attributes: Record<string, unknown>;
-  text_preview: string;
-}> {
-  return (data ?? []).map((result: any) => {
-    const contentParts = Array.isArray(result?.content)
-      ? result.content
-      : (result?.content ? [result.content] : []);
-    const textPreview = contentParts
-      .map((part: any) => {
-        if (typeof part === "string") return part;
-        if (typeof part?.text === "string") return part.text;
-        if (typeof part?.content === "string") return part.content;
-        if (typeof part?.value === "string") return part.value;
-        return "";
-      })
-      .filter(Boolean)
-      .join("\n")
-      .slice(0, 4000);
-
-    return {
-      id: result?.file_id ?? "",
-      filename: result?.filename ?? "",
-      score: Number(result?.score ?? 0),
-      attributes: result?.attributes ?? {},
-      text_preview: textPreview
-    };
-  });
-}
-
-function buildFallbackSections(docType: string, inputText: string) {
-  const resumo = (inputText ?? "").trim().slice(0, 2500) || "Dados fornecidos pelo usuário para elaboração da peça.";
-  const tituloTipo: Record<string, string> = {
-    iniciais: "PETIÇÃO INICIAL",
-    contestacao: "CONTESTAÇÃO",
-    replica: "RÉPLICA",
-    memoriais: "MEMORIAIS",
-    recursos: "RECURSO",
-    contrarrazoes: "CONTRARRAZÕES",
-    cumprimento_de_sentenca: "CUMPRIMENTO DE SENTENÇA",
-    peticoes_gerais: "PETIÇÃO"
-  };
-  const title = tituloTipo[docType] ?? "PEÇA JURÍDICA";
-  const typeSpecificBlockId: Record<string, string> = {
-    iniciais: "qualificacao_partes",
-    contestacao: "merito_impugnacao",
-    replica: "impugnacao_merito",
-    memoriais: "pontos_controvertidos_tese",
-    recursos: "razoes_recursais",
-    contrarrazoes: "rebater_fundamentos",
-    cumprimento_de_sentenca: "demonstrativo_debito",
-    peticoes_gerais: "pedido_direto_fundamento"
-  };
-
-  return [
-    {
-      ordem: 1,
-      titulo_literal: "EXCELENTÍSSIMO(A) SENHOR(A) JUIZ(A) DE DIREITO",
-      blocks: [
-        { block_id: "enderecamento", type: "paragraph", text: "EXCELENTÍSSIMO(A) SENHOR(A) JUIZ(A) DE DIREITO", ordered: false, items: [], rows: [], source: "fallback_without_filesearch_text" }
-      ]
-    },
-    {
-      ordem: 2,
-      titulo_literal: title,
-      blocks: [
-        { block_id: "titulo_peca", type: "paragraph", text: title, ordered: false, items: [], rows: [], source: "fallback_without_filesearch_text" }
-      ]
-    },
-    {
-      ordem: 3,
-      titulo_literal: "SÍNTESE FÁTICA",
-      blocks: [
-        { block_id: "sintese_fatica", type: "paragraph", text: resumo, ordered: false, items: [], rows: [], source: "user_input" }
-      ]
-    },
-    {
-      ordem: 4,
-      titulo_literal: "FUNDAMENTAÇÃO E IMPUGNAÇÃO",
-      blocks: [
-        { block_id: typeSpecificBlockId[docType] ?? "fundamentacao_juridica", type: "paragraph", text: "Com base nos fatos narrados e nos documentos do caso, requer-se a análise técnica e jurídica para acolhimento das teses da presente peça.", ordered: false, items: [], rows: [], source: "fallback_without_filesearch_text" }
-      ]
-    },
-    {
-      ordem: 5,
-      titulo_literal: "PEDIDOS",
-      blocks: [
-        { block_id: "pedidos_finais", type: "list", text: "", ordered: false, items: ["Recebimento da presente peça;", "Apreciação integral das teses expostas;", "Julgamento conforme os pedidos formulados no caso concreto."], rows: [], source: "fallback_without_filesearch_text" }
-      ]
-    },
-    {
-      ordem: 6,
-      titulo_literal: "Termos em que, pede deferimento.",
-      blocks: [
-        { block_id: "fecho", type: "paragraph", text: "Termos em que, pede deferimento.\nCidade, [PREENCHER: data].", ordered: false, items: [], rows: [], source: "fallback_without_filesearch_text" },
-        { block_id: "local_data_assinatura_oab", type: "paragraph", text: "Cidade, [PREENCHER: data].", ordered: false, items: [], rows: [], source: "fallback_without_filesearch_text" }
-      ]
-    }
-  ];
-}
-
-function ensureNonEmptySections(output: any, inputText: string) {
-  if (!output || typeof output !== "object") return output;
-  const docType = output?.doc_type;
-  const sections = output?.doc?.sections;
-  if (!Array.isArray(sections) || sections.length > 0) return output;
-  output.doc.sections = buildFallbackSections(String(docType ?? ""), inputText);
-  if (output?.meta && Array.isArray(output.meta.warnings)) {
-    output.meta.warnings.push("FALLBACK: sections geradas a partir do intake por ausência de conteúdo textual útil do File Search.");
-  }
-  return output;
-}
-
-function shouldUseFastQuestionPath(input: string): boolean {
-  const text = (input ?? "").toLowerCase();
-  if (!text.trim()) return false;
-
-  const asksDocumentAnalysis =
-    /(me\s+explique|explique|resuma|analis[ea]|o que (é|significa)|qual a diferen[çc]a|interprete)/.test(text);
-  const asksDrafting =
-    /(peti[cç][aã]o|contest[aã]?[cç][aã]o|r[eé]plica|memoriais|recurso|contrarraz[oõ]es|cumprimento de senten[cç]a|redigir|elaborar|escrever pe[cç]a)/.test(text);
-
-  return asksDocumentAnalysis && !asksDrafting;
-}
-
-async function runAndApplyGuardrails(inputText: string, config: any, history: any[], workflow: any) {
-    const guardrails = Array.isArray(config?.guardrails) ? config.guardrails : [];
-    const results = await runGuardrails(inputText, config, context, true);
-    const shouldMaskPII = guardrails.find((g) => (g?.name === "Contains PII") && g?.config && g.config.block === false);
-    if (shouldMaskPII) {
-        const piiOnly = { guardrails: [shouldMaskPII] };
-        await scrubConversationHistory(history, piiOnly);
-        await scrubWorkflowInput(workflow, "input_as_text", piiOnly);
-        await scrubWorkflowInput(workflow, "input_text", piiOnly);
-    }
-    const hasTripwire = guardrailsHasTripwire(results);
-    const safeText = getGuardrailSafeText(results, inputText) ?? inputText;
-    return { results, hasTripwire, safeText, failOutput: buildGuardrailFailOutput(results ?? []), passOutput: { safe_text: safeText } };
-}
-
-function buildGuardrailFailOutput(results: any[]) {
-    const get = (name: string) => (results ?? []).find((r: any) => ((r?.info?.guardrail_name ?? r?.info?.guardrailName) === name));
-    const pii = get("Contains PII"), mod = get("Moderation"), jb = get("Jailbreak"), hal = get("Hallucination Detection"), nsfw = get("NSFW Text"), url = get("URL Filter"), custom = get("Custom Prompt Check"), pid = get("Prompt Injection Detection"), piiCounts = Object.entries(pii?.info?.detected_entities ?? {}).filter(([, v]) => Array.isArray(v)).map(([k, v]) => k + ":" + (v as any).length), conf = jb?.info?.confidence;
-    return {
-        pii: { failed: (piiCounts.length > 0) || pii?.tripwireTriggered === true, detected_counts: piiCounts },
-        moderation: { failed: mod?.tripwireTriggered === true || ((mod?.info?.flagged_categories ?? []).length > 0), flagged_categories: mod?.info?.flagged_categories },
-        jailbreak: { failed: jb?.tripwireTriggered === true },
-        hallucination: { failed: hal?.tripwireTriggered === true, reasoning: hal?.info?.reasoning, hallucination_type: hal?.info?.hallucination_type, hallucinated_statements: hal?.info?.hallucinated_statements, verified_statements: hal?.info?.verified_statements },
-        nsfw: { failed: nsfw?.tripwireTriggered === true },
-        url_filter: { failed: url?.tripwireTriggered === true },
-        custom_prompt_check: { failed: custom?.tripwireTriggered === true },
-        prompt_injection: { failed: pid?.tripwireTriggered === true },
-    };
-}
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const ClassifyUserIntentSchema = z.object({ intent: z.enum(["criar_novo", "revisar_existente", "pesquisar_jurisprudencia", "duvida_aberta", "indefinido"]), justificativa: z.string() });
 const IntakeContestaOConversacionalSchema = z.object({ intake_completo: z.enum(["sim", "nao"]), resumo_entendimento: z.string(), peca_desejada: z.string(), ramo_direito: z.string(), jurisdicao_foro: z.string(), partes: z.object({ reu: z.string(), autor: z.string() }), tipo_acao_do_autor: z.string(), pedidos_do_autor: z.array(z.string()), fatos_chave: z.string(), documentos_disponiveis: z.array(z.string()), pontos_para_impugnar: z.array(z.string()), preliminares_possiveis: z.array(z.string()), riscos_e_restricoes: z.array(z.string()), itens_faltantes: z.array(z.string()) });
 const IntakeRPlicaConversacionalSchema = z.object({ intake_completo: z.enum(["sim", "nao"]), resumo_entendimento: z.string(), peca_desejada: z.string(), ramo_direito: z.string(), jurisdicao_foro: z.string(), partes: z.object({ autor: z.string(), reu: z.string() }), tipo_acao_original: z.string(), resumo_da_contestacao: z.string(), pontos_da_contestacao: z.array(z.string()), pontos_para_rebater: z.array(z.string()), documentos_disponiveis: z.array(z.string()), riscos_e_prazos: z.array(z.string()), itens_faltantes: z.array(z.string()) });
 const AgenteClassificadorStageSchema = z.object({ category: z.enum(["Iniciais", "Contestacao", "Replica", "Memoriais", "Recursos", "Contrarrazoes", "Cumprimento de Sentenca", "Peticoes Gerais", "Else"]) });
 const IniciaisPrepararBuscaQueryPackSchema = z.object({ termos_principais: z.array(z.string()), termos_secundarios: z.array(z.string()), jurisdicao: z.string(), ramo_direito: z.enum(["previdenciario"]), tipo_acao: z.string(), pedido_principal: z.string(), pedidos_acessorios: z.array(z.string()), excluir_termos: z.array(z.string()), consulta_pronta: z.string() });
-const IniciaisSelecionarEExtrairTrechosSchema = z.object({ schema_version: z.string(), documentos_usados: z.array(z.string()), template_principal: z.object({ origem: z.string(), motivo_escolha: z.string(), recorrencia_aproximada: z.enum(["alta", "media", "baixa"]) }), template_estrutura: z.array(z.object({ ordem: z.union([z.string(), z.number()]), titulo_literal: z.string(), descricao_curta: z.string(), trecho_base: z.string() })), template_bloco_padrao: z.array(z.object({ origem: z.string(), label: z.string(), texto: z.string() })), camada_base: z.object({ enderecamento: z.union([z.string(), z.number()]), identificacao_processo: z.union([z.string(), z.number()]), partes_e_polos: z.union([z.string(), z.number()]), titulo_da_peca: z.union([z.string(), z.number()]), contexto_fatico: z.union([z.string(), z.number()]), fundamentacao_juridica: z.union([z.string(), z.number()]), pedidos_finais: z.union([z.string(), z.number()]), provas: z.union([z.string(), z.number()]), fecho: z.union([z.string(), z.number()]), local_data_assinatura_oab: z.union([z.string(), z.number()]) }), tese_central: z.string(), estrategia: z.string(), trechos_relevantes: z.array(z.object({ origem: z.string(), secao_template: z.string(), tipo: z.enum(["estrutura", "narrativa_fatica", "fundamentacao_legal", "fundamentacao_jurisprudencial", "preliminar", "pedido_principal", "pedido_subsidiario", "tutela", "prova", "fecho"]), texto: z.string() })), jurisprudencias: z.array(z.object({ origem: z.string(), tribunal: z.string(), orgao_julgador: z.string(), numero_processo: z.string(), relator: z.string(), data_julgamento: z.string(), tipo: z.enum(["acordao", "ementa", "precedente", "sumula", "tema_repetitivo", "tema_repercussao_geral", "outro"]), titulo_identificacao: z.string(), trecho_citado: z.string(), secao_template_relacionada: z.string() })), decisoes: z.array(z.object({ origem: z.string(), tipo: z.enum(["sentenca", "decisao_interlocutoria", "despacho", "acordao", "outro"]), orgao: z.string(), numero_processo: z.string(), data: z.string(), resultado: z.string(), trecho_dispositivo: z.string(), secao_template_relacionada: z.string() })), placeholders_variaveis: z.array(z.object({ campo: z.string(), onde_aparece: z.string(), exemplo_do_template: z.string() })), checklist_faltando: z.array(z.string()), observacoes_confiabilidade: z.object({ template_confiavel: z.boolean(), nivel_confiabilidade: z.enum(["alto", "medio", "baixo"]), motivo: z.string(), alertas: z.array(z.string()) }) });
-const ContestaOPrepararBuscaQueryPackSchema = z.object({ termos_principais: z.array(z.string()), termos_secundarios: z.array(z.string()), jurisdicao: z.string(), ramo_direito: z.string(), tipo_acao: z.string(), beneficio: z.string(), polo_passivo: z.string(), polo_ativo: z.string(), tese_defensiva_principal: z.string(), teses_defensivas_secundarias: z.array(z.string()), preliminares: z.array(z.string()), pontos_impugnacao: z.array(z.string()), documentos_chave: z.array(z.string()), fase_procedimental: z.string(), pedido_principal: z.string(), pedidos_acessorios: z.array(z.string()), excluir_termos: z.array(z.string()), filtros: z.object({ somente_previdenciario: z.boolean(), preferir_jf: z.boolean(), recorte_temporal_anos: z.union([z.string(), z.number()]), exigir_similaridade_alta: z.boolean() }), consulta_pronta: z.string() });
-const ContestaOExtrairTemplateSchema = z.object({ schema_version: z.string(), documentos_usados: z.array(z.string()), template_principal: z.object({ origem: z.string(), motivo_escolha: z.string(), recorrencia_aproximada: z.enum(["alta", "media", "baixa"]) }), template_estrutura: z.array(z.object({ ordem: z.union([z.string(), z.number()]), titulo_literal: z.string(), descricao_curta: z.string(), trecho_base: z.string() })), template_bloco_padrao: z.array(z.object({ origem: z.string(), label: z.string(), texto: z.string() })), tese_central_defesa: z.string(), estrategia_defensiva: z.string(), trechos_relevantes: z.array(z.object({ origem: z.string(), secao_template: z.string(), tipo: z.enum(["estrutura", "sintese_inicial", "tempestividade", "preliminar", "merito", "impugnacao_documentos", "impugnacao_especifica", "onus_da_prova", "prova", "pedido_principal", "pedido_subsidiario", "fecho"]), texto: z.string() })), jurisprudencias: z.array(z.object({ origem: z.string(), tribunal: z.string(), orgao_julgador: z.string(), numero_processo: z.string(), relator: z.string(), data_julgamento: z.string(), tipo: z.enum(["acordao", "ementa", "precedente", "sumula", "tema_repetitivo", "tema_repercussao_geral", "outro"]), titulo_identificacao: z.string(), trecho_citado: z.string(), secao_template_relacionada: z.string() })), decisoes: z.array(z.object({ origem: z.string(), tipo: z.enum(["sentenca", "decisao_interlocutoria", "despacho", "acordao", "outro"]), orgao: z.string(), numero_processo: z.string(), data: z.string(), resultado: z.string(), trecho_dispositivo: z.string(), secao_template_relacionada: z.string() })), placeholders_variaveis: z.array(z.object({ campo: z.string(), onde_aparece: z.string(), exemplo_do_template: z.string() })), checklist_faltando: z.array(z.string()), observacoes_confiabilidade: z.object({ template_confiavel: z.boolean(), nivel_confiabilidade: z.enum(["alto", "medio", "baixo"]), motivo: z.string(), alertas: z.array(z.string()) }) });
+const IniciaisSelecionarEExtrairTrechosSchema = z.object({ schema_version: z.string(), documentos_usados: z.array(z.string()), template_principal: z.object({ origem: z.string(), motivo_escolha: z.string(), recorrencia_aproximada: z.enum(["alta", "media", "baixa"]) }), template_estrutura: z.array(z.object({ ordem: z.any(), titulo_literal: z.string(), descricao_curta: z.string(), trecho_base: z.string() })), template_bloco_padrao: z.array(z.object({ origem: z.string(), label: z.string(), texto: z.string() })), camada_base: z.object({ enderecamento: z.any(), identificacao_processo: z.any(), partes_e_polos: z.any(), titulo_da_peca: z.any(), contexto_fatico: z.any(), fundamentacao_juridica: z.any(), pedidos_finais: z.any(), provas: z.any(), fecho: z.any(), local_data_assinatura_oab: z.any() }), tese_central: z.string(), estrategia: z.string(), trechos_relevantes: z.array(z.object({ origem: z.string(), secao_template: z.string(), tipo: z.enum(["estrutura", "narrativa_fatica", "fundamentacao_legal", "fundamentacao_jurisprudencial", "preliminar", "pedido_principal", "pedido_subsidiario", "tutela", "prova", "fecho"]), texto: z.string() })), jurisprudencias: z.array(z.object({ origem: z.string(), tribunal: z.string(), orgao_julgador: z.string(), numero_processo: z.string(), relator: z.string(), data_julgamento: z.string(), tipo: z.enum(["acordao", "ementa", "precedente", "sumula", "tema_repetitivo", "tema_repercussao_geral", "outro"]), titulo_identificacao: z.string(), trecho_citado: z.string(), secao_template_relacionada: z.string() })), decisoes: z.array(z.object({ origem: z.string(), tipo: z.enum(["sentenca", "decisao_interlocutoria", "despacho", "acordao", "outro"]), orgao: z.string(), numero_processo: z.string(), data: z.string(), resultado: z.string(), trecho_dispositivo: z.string(), secao_template_relacionada: z.string() })), placeholders_variaveis: z.array(z.object({ campo: z.string(), onde_aparece: z.string(), exemplo_do_template: z.string() })), checklist_faltando: z.array(z.string()), observacoes_confiabilidade: z.object({ template_confiavel: z.boolean(), nivel_confiabilidade: z.enum(["alto", "medio", "baixo"]), motivo: z.string(), alertas: z.array(z.string()) }) });
+const ContestaOPrepararBuscaQueryPackSchema = z.object({ termos_principais: z.array(z.string()), termos_secundarios: z.array(z.string()), jurisdicao: z.string(), ramo_direito: z.string(), tipo_acao: z.string(), beneficio: z.string(), polo_passivo: z.string(), polo_ativo: z.string(), tese_defensiva_principal: z.string(), teses_defensivas_secundarias: z.array(z.string()), preliminares: z.array(z.string()), pontos_impugnacao: z.array(z.string()), documentos_chave: z.array(z.string()), fase_procedimental: z.string(), pedido_principal: z.string(), pedidos_acessorios: z.array(z.string()), excluir_termos: z.array(z.string()), filtros: z.object({ somente_previdenciario: z.boolean(), preferir_jf: z.boolean(), recorte_temporal_anos: z.any(), exigir_similaridade_alta: z.boolean() }), consulta_pronta: z.string() });
+const ContestaOExtrairTemplateSchema = z.object({ schema_version: z.string(), documentos_usados: z.array(z.string()), template_principal: z.object({ origem: z.string(), motivo_escolha: z.string(), recorrencia_aproximada: z.enum(["alta", "media", "baixa"]) }), template_estrutura: z.array(z.object({ ordem: z.any(), titulo_literal: z.string(), descricao_curta: z.string(), trecho_base: z.string() })), template_bloco_padrao: z.array(z.object({ origem: z.string(), label: z.string(), texto: z.string() })), tese_central_defesa: z.string(), estrategia_defensiva: z.string(), trechos_relevantes: z.array(z.object({ origem: z.string(), secao_template: z.string(), tipo: z.enum(["estrutura", "sintese_inicial", "tempestividade", "preliminar", "merito", "impugnacao_documentos", "impugnacao_especifica", "onus_da_prova", "prova", "pedido_principal", "pedido_subsidiario", "fecho"]), texto: z.string() })), jurisprudencias: z.array(z.object({ origem: z.string(), tribunal: z.string(), orgao_julgador: z.string(), numero_processo: z.string(), relator: z.string(), data_julgamento: z.string(), tipo: z.enum(["acordao", "ementa", "precedente", "sumula", "tema_repetitivo", "tema_repercussao_geral", "outro"]), titulo_identificacao: z.string(), trecho_citado: z.string(), secao_template_relacionada: z.string() })), decisoes: z.array(z.object({ origem: z.string(), tipo: z.enum(["sentenca", "decisao_interlocutoria", "despacho", "acordao", "outro"]), orgao: z.string(), numero_processo: z.string(), data: z.string(), resultado: z.string(), trecho_dispositivo: z.string(), secao_template_relacionada: z.string() })), placeholders_variaveis: z.array(z.object({ campo: z.string(), onde_aparece: z.string(), exemplo_do_template: z.string() })), checklist_faltando: z.array(z.string()), observacoes_confiabilidade: z.object({ template_confiavel: z.boolean(), nivel_confiabilidade: z.enum(["alto", "medio", "baixo"]), motivo: z.string(), alertas: z.array(z.string()) }) });
 const IntakeIniciaisSchema = z.object({ tipo_peca: z.string(), area_direito: z.string(), jurisdicao: z.string(), tipo_acao: z.string(), partes: z.object({ autor: z.string(), reu: z.string() }), resumo_fatos: z.string(), pedidos: z.object({ principal: z.string(), acessorios: z.array(z.string()), tutela_urgencia: z.string() }), documentos_e_provas: z.array(z.string()), datas_e_valores: z.object({ datas_relevantes: z.array(z.string()), valores_relevantes: z.array(z.string()) }), restricoes_estilo: z.array(z.string()), perguntas_necessarias: z.array(z.string()), pronto_para_busca: z.boolean(), mensagem_ao_usuario: z.string() });
 const IntakeIniciaisConversationalSchema = z.object({ intake_completo: z.enum(["sim", "nao"]), faltando: z.array(z.string()), pergunta_unica: z.string(), resumo_do_caso: z.string() });
 const IntakeContestaOSchema = z.object({ tipo_peca: z.string(), area_direito: z.string(), jurisdicao: z.string(), numero_processo: z.string(), tipo_acao: z.string(), partes: z.object({ autor: z.string(), reu: z.string() }), pedidos_do_autor: z.array(z.string()), resumo_fatos_autor: z.string(), versao_reu: z.string(), teses_defesa: z.array(z.string()), preliminares: z.array(z.string()), impugnacao_especifica: z.array(z.string()), provas_reu: z.array(z.string()), riscos_e_urgencias: z.object({ liminar_tutela_em_vigor: z.string(), prazos_urgentes: z.array(z.string()), medidas_constritivas: z.array(z.string()) }), datas_e_valores: z.object({ datas_relevantes: z.array(z.string()), valores_relevantes: z.array(z.string()) }), restricoes_estilo: z.array(z.string()), perguntas_necessarias: z.array(z.string()), pronto_para_busca: z.boolean(), mensagem_ao_usuario: z.string() });
 const IntakeRPlicaSchema = z.object({ tipo_peca: z.string(), area_direito: z.string(), jurisdicao: z.string(), numero_processo: z.string(), tipo_acao: z.string(), partes: z.object({ autor: z.string(), reu: z.string() }), pedidos_iniciais_autor: z.array(z.string()), resumo_contestacao: z.string(), preliminares_reu: z.array(z.string()), teses_merito_reu: z.array(z.string()), pontos_para_impugnar: z.array(z.string()), impugnacao_documentos_reu: z.array(z.string()), provas_autor: z.array(z.string()), pedidos_na_replica: z.array(z.string()), riscos_e_prazos: z.object({ audiencia_marcada: z.string(), prazos_urgentes: z.array(z.string()), liminar_tutela_em_vigor_ou_pendente: z.string() }), datas_e_valores: z.object({ datas_relevantes: z.array(z.string()), valores_relevantes: z.array(z.string()) }), restricoes_estilo: z.array(z.string()), perguntas_necessarias: z.array(z.string()), pronto_para_busca: z.boolean(), mensagem_ao_usuario: z.string() });
-const RPlicaPrepararBuscaQueryPackSchema = z.object({ termos_principais: z.array(z.string()), termos_secundarios: z.array(z.string()), jurisdicao: z.string(), ramo_direito: z.string(), tipo_acao: z.string(), beneficio_ou_tema: z.string(), polo_passivo: z.string(), tribunal_referencia: z.string(), preliminares_reu: z.array(z.string()), teses_merito_reu: z.array(z.string()), estrategia_impugnacao: z.array(z.string()), documentos_chave: z.array(z.string()), objetivo_principal: z.string(), pontos_para_impugnar: z.array(z.string()), recorte_temporal: z.object({ anos_para_ca: z.union([z.string(), z.number()]), justificativa: z.string() }), excluir_termos: z.array(z.string()), consulta_pronta: z.string() });
-const RPlicaSelecionarEvidNciasSchema = z.object({ schema_version: z.string(), documentos_usados: z.array(z.string()), template_principal: z.object({ origem: z.string(), motivo_escolha: z.string(), recorrencia_aproximada: z.enum(["alta", "media", "baixa"]) }), blocos_universais_mapeamento: z.array(z.object({ bloco: z.enum(["enderecamento", "identificacao_processo", "partes_e_polos", "titulo_da_peca", "contexto_fatico", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"]), presente_no_template: z.boolean(), secao_template: z.string(), trecho_literal_exemplo: z.string() })), blocos_replica_mapeamento: z.array(z.object({ bloco: z.enum(["impugnacao_preliminares", "impugnacao_merito", "impugnacao_documentos_reu", "reforco_pedidos_iniciais", "reitera_ajusta_provas"]), presente_no_template: z.boolean(), secao_template: z.string(), trecho_literal_exemplo: z.string() })), template_estrutura: z.array(z.object({ ordem: z.union([z.string(), z.number()]), titulo_literal: z.string(), descricao_curta: z.string(), trecho_base: z.string() })), template_bloco_padrao: z.array(z.object({ origem: z.string(), label: z.string(), texto: z.string() })), tese_central_replica: z.string(), estrategia_replica: z.string(), trechos_relevantes: z.array(z.object({ origem: z.string(), secao_template: z.string(), tipo: z.enum(["estrutura", "sintese_contestacao", "impugnacao_preliminar", "impugnacao_merito", "impugnacao_documentos", "onus_da_prova", "prova", "manutencao_pedidos", "pedido_final", "fecho"]), texto: z.string() })), jurisprudencias: z.array(z.object({ origem: z.string(), tribunal: z.string(), orgao_julgador: z.string(), numero_processo: z.string(), relator: z.string(), data_julgamento: z.string(), tipo: z.enum(["acordao", "ementa", "precedente", "sumula", "tema_repetitivo", "tema_repercussao_geral", "outro"]), titulo_identificacao: z.string(), trecho_citado: z.string(), secao_template_relacionada: z.string() })), decisoes: z.array(z.object({ origem: z.string(), tipo: z.enum(["sentenca", "decisao_interlocutoria", "despacho", "acordao", "outro"]), orgao: z.string(), numero_processo: z.string(), data: z.string(), resultado: z.string(), trecho_dispositivo: z.string(), secao_template_relacionada: z.string() })), placeholders_variaveis: z.array(z.object({ campo: z.string(), onde_aparece: z.string(), exemplo_do_template: z.string() })), checklist_faltando: z.array(z.string()), observacoes_confiabilidade: z.object({ template_confiavel: z.boolean(), nivel_confiabilidade: z.enum(["alto", "medio", "baixo"]), motivo: z.string(), alertas: z.array(z.string()) }) });
+const RPlicaPrepararBuscaQueryPackSchema = z.object({ termos_principais: z.array(z.string()), termos_secundarios: z.array(z.string()), jurisdicao: z.string(), ramo_direito: z.string(), tipo_acao: z.string(), beneficio_ou_tema: z.string(), polo_passivo: z.string(), tribunal_referencia: z.string(), preliminares_reu: z.array(z.string()), teses_merito_reu: z.array(z.string()), estrategia_impugnacao: z.array(z.string()), documentos_chave: z.array(z.string()), objetivo_principal: z.string(), pontos_para_impugnar: z.array(z.string()), recorte_temporal: z.object({ anos_para_ca: z.any(), justificativa: z.string() }), excluir_termos: z.array(z.string()), consulta_pronta: z.string() });
+const RPlicaSelecionarEvidNciasSchema = z.object({ schema_version: z.string(), documentos_usados: z.array(z.string()), template_principal: z.object({ origem: z.string(), motivo_escolha: z.string(), recorrencia_aproximada: z.enum(["alta", "media", "baixa"]) }), blocos_universais_mapeamento: z.array(z.object({ bloco: z.enum(["enderecamento", "identificacao_processo", "partes_e_polos", "titulo_da_peca", "contexto_fatico", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"]), presente_no_template: z.boolean(), secao_template: z.string(), trecho_literal_exemplo: z.string() })), blocos_replica_mapeamento: z.array(z.object({ bloco: z.enum(["impugnacao_preliminares", "impugnacao_merito", "impugnacao_documentos_reu", "reforco_pedidos_iniciais", "reitera_ajusta_provas"]), presente_no_template: z.boolean(), secao_template: z.string(), trecho_literal_exemplo: z.string() })), template_estrutura: z.array(z.object({ ordem: z.any(), titulo_literal: z.string(), descricao_curta: z.string(), trecho_base: z.string() })), template_bloco_padrao: z.array(z.object({ origem: z.string(), label: z.string(), texto: z.string() })), tese_central_replica: z.string(), estrategia_replica: z.string(), trechos_relevantes: z.array(z.object({ origem: z.string(), secao_template: z.string(), tipo: z.enum(["estrutura", "sintese_contestacao", "impugnacao_preliminar", "impugnacao_merito", "impugnacao_documentos", "onus_da_prova", "prova", "manutencao_pedidos", "pedido_final", "fecho"]), texto: z.string() })), jurisprudencias: z.array(z.object({ origem: z.string(), tribunal: z.string(), orgao_julgador: z.string(), numero_processo: z.string(), relator: z.string(), data_julgamento: z.string(), tipo: z.enum(["acordao", "ementa", "precedente", "sumula", "tema_repetitivo", "tema_repercussao_geral", "outro"]), titulo_identificacao: z.string(), trecho_citado: z.string(), secao_template_relacionada: z.string() })), decisoes: z.array(z.object({ origem: z.string(), tipo: z.enum(["sentenca", "decisao_interlocutoria", "despacho", "acordao", "outro"]), orgao: z.string(), numero_processo: z.string(), data: z.string(), resultado: z.string(), trecho_dispositivo: z.string(), secao_template_relacionada: z.string() })), placeholders_variaveis: z.array(z.object({ campo: z.string(), onde_aparece: z.string(), exemplo_do_template: z.string() })), checklist_faltando: z.array(z.string()), observacoes_confiabilidade: z.object({ template_confiavel: z.boolean(), nivel_confiabilidade: z.enum(["alto", "medio", "baixo"]), motivo: z.string(), alertas: z.array(z.string()) }) });
 const IntakeMemoriaisConversacionalSchema = z.object({ intake_completo: z.enum(["sim", "nao"]), resumo_entendimento: z.string(), peca_desejada: z.string(), ramo_direito: z.string(), jurisdicao_foro: z.string(), partes: z.object({ autor: z.string(), reu: z.string() }), tipo_acao_original: z.string(), resumo_do_processo_ate_agora: z.string(), provas_produzidas: z.array(z.string()), fatos_comprovados: z.array(z.string()), pontos_controvertidos: z.array(z.string()), tese_final_desejada: z.string(), pedidos_finais: z.array(z.string()), riscos_e_prazos: z.array(z.string()), itens_faltantes: z.array(z.string()) });
 const IntakeMemoriaisSchema = z.object({ tipo_peca: z.string(), area_direito: z.string(), jurisdicao: z.string(), numero_processo: z.string(), tipo_acao: z.string(), partes: z.object({ autor: z.string(), reu: z.string() }), pedidos_iniciais: z.array(z.string()), resumo_andamento_processo: z.string(), provas_produzidas: z.array(z.string()), fatos_comprovados: z.array(z.string()), pontos_controvertidos: z.array(z.string()), tese_final: z.string(), pedidos_finais: z.array(z.string()), riscos_e_prazos: z.object({ audiencia_realizada_ou_marcada: z.string(), prazos_urgentes: z.array(z.string()), decisao_relevante_ou_tutela: z.string() }), datas_e_valores: z.object({ datas_relevantes: z.array(z.string()), valores_relevantes: z.array(z.string()) }), restricoes_estilo: z.array(z.string()), perguntas_necessarias: z.array(z.string()), pronto_para_busca: z.boolean(), mensagem_ao_usuario: z.string() });
-const MemoriaisPrepararBuscaQueryPackSchema = z.object({ schema_version: z.string(), termos_principais: z.array(z.string()), termos_secundarios: z.array(z.string()), jurisdicao: z.string(), ramo_direito: z.string(), tipo_acao: z.string(), fase_processual: z.string(), beneficio_tema_previdenciario: z.string(), provas_chave: z.array(z.string()), pontos_controvertidos: z.array(z.string()), tese_final: z.string(), objetivo_principal: z.string(), pontos_para_sustentar: z.array(z.string()), recorte_temporal: z.object({ modo: z.enum(["preferir", "exigir", "nenhum"]), anos: z.union([z.string(), z.number()]), prioridade: z.enum(["alta", "media", "baixa"]) }), excluir_termos: z.array(z.string()), consulta_pronta: z.string() });
-const MemoriaisSelecionarEExtrairTrechosSchema = z.object({ schema_version: z.string(), documentos_usados: z.array(z.string()), template_principal: z.object({ origem: z.string(), motivo_escolha: z.string(), recorrencia_aproximada: z.enum(["alta", "media", "baixa"]) }), template_estrutura: z.array(z.object({ ordem: z.union([z.string(), z.number()]), titulo_literal: z.string(), descricao_curta: z.string(), trecho_base: z.string() })), template_bloco_padrao: z.array(z.object({ origem: z.string(), label: z.string(), texto: z.string() })), tese_central_memoriais: z.string(), estrategia_memoriais: z.string(), trechos_relevantes: z.array(z.object({ origem: z.string(), secao_template: z.string(), tipo: z.enum(["estrutura", "sintese_fatico_processual", "pontos_controvertidos", "valoracao_prova_documental", "valoracao_prova_testemunhal", "valoracao_prova_pericial", "depoimento_pessoal_confissao", "onus_da_prova", "tese_final", "danos_quantum", "pedido_final", "fecho"]), texto: z.string() })), jurisprudencias: z.array(z.object({ origem: z.string(), tribunal: z.string(), orgao_julgador: z.string(), numero_processo: z.string(), relator: z.string(), data_julgamento: z.string(), tipo: z.enum(["acordao", "ementa", "precedente", "sumula", "tema_repetitivo", "tema_repercussao_geral", "outro"]), titulo_identificacao: z.string(), trecho_citado: z.string(), secao_template_relacionada: z.string() })), decisoes: z.array(z.object({ origem: z.string(), tipo: z.enum(["sentenca", "decisao_interlocutoria", "despacho", "acordao", "outro"]), orgao: z.string(), numero_processo: z.string(), data: z.string(), resultado: z.string(), trecho_dispositivo: z.string(), secao_template_relacionada: z.string() })), placeholders_variaveis: z.array(z.object({ campo: z.string(), onde_aparece: z.string(), exemplo_do_template: z.string() })), checklist_faltando: z.array(z.string()), observacoes_confiabilidade: z.object({ template_confiavel: z.boolean(), nivel_confiabilidade: z.enum(["alto", "medio", "baixo"]), motivo: z.string(), alertas: z.array(z.string()) }) });
+const MemoriaisPrepararBuscaQueryPackSchema = z.object({ schema_version: z.string(), termos_principais: z.array(z.string()), termos_secundarios: z.array(z.string()), jurisdicao: z.string(), ramo_direito: z.string(), tipo_acao: z.string(), fase_processual: z.string(), beneficio_tema_previdenciario: z.string(), provas_chave: z.array(z.string()), pontos_controvertidos: z.array(z.string()), tese_final: z.string(), objetivo_principal: z.string(), pontos_para_sustentar: z.array(z.string()), recorte_temporal: z.object({ modo: z.enum(["preferir", "exigir", "nenhum"]), anos: z.any(), prioridade: z.enum(["alta", "media", "baixa"]) }), excluir_termos: z.array(z.string()), consulta_pronta: z.string() });
+const MemoriaisSelecionarEExtrairTrechosSchema = z.object({ schema_version: z.string(), documentos_usados: z.array(z.string()), template_principal: z.object({ origem: z.string(), motivo_escolha: z.string(), recorrencia_aproximada: z.enum(["alta", "media", "baixa"]) }), template_estrutura: z.array(z.object({ ordem: z.any(), titulo_literal: z.string(), descricao_curta: z.string(), trecho_base: z.string() })), template_bloco_padrao: z.array(z.object({ origem: z.string(), label: z.string(), texto: z.string() })), tese_central_memoriais: z.string(), estrategia_memoriais: z.string(), trechos_relevantes: z.array(z.object({ origem: z.string(), secao_template: z.string(), tipo: z.enum(["estrutura", "sintese_fatico_processual", "pontos_controvertidos", "valoracao_prova_documental", "valoracao_prova_testemunhal", "valoracao_prova_pericial", "depoimento_pessoal_confissao", "onus_da_prova", "tese_final", "danos_quantum", "pedido_final", "fecho"]), texto: z.string() })), jurisprudencias: z.array(z.object({ origem: z.string(), tribunal: z.string(), orgao_julgador: z.string(), numero_processo: z.string(), relator: z.string(), data_julgamento: z.string(), tipo: z.enum(["acordao", "ementa", "precedente", "sumula", "tema_repetitivo", "tema_repercussao_geral", "outro"]), titulo_identificacao: z.string(), trecho_citado: z.string(), secao_template_relacionada: z.string() })), decisoes: z.array(z.object({ origem: z.string(), tipo: z.enum(["sentenca", "decisao_interlocutoria", "despacho", "acordao", "outro"]), orgao: z.string(), numero_processo: z.string(), data: z.string(), resultado: z.string(), trecho_dispositivo: z.string(), secao_template_relacionada: z.string() })), placeholders_variaveis: z.array(z.object({ campo: z.string(), onde_aparece: z.string(), exemplo_do_template: z.string() })), checklist_faltando: z.array(z.string()), observacoes_confiabilidade: z.object({ template_confiavel: z.boolean(), nivel_confiabilidade: z.enum(["alto", "medio", "baixo"]), motivo: z.string(), alertas: z.array(z.string()) }) });
 const IntakeRecursosConversacionalSchema = z.object({ intake_completo: z.enum(["sim", "nao"]), resumo_entendimento: z.string(), peca_desejada: z.string(), ramo_direito: z.string(), jurisdicao_foro: z.string(), partes: z.object({ recorrente: z.string(), recorrido: z.string() }), tipo_acao_original: z.string(), resumo_do_processo: z.string(), decisao_recorrida: z.string(), pontos_que_serao_atacados: z.array(z.string()), fundamentos_do_recurso: z.array(z.string()), tese_recursal: z.string(), resultado_esperado: z.string(), riscos_e_prazos: z.array(z.string()), itens_faltantes: z.array(z.string()) });
 const IntakeRecursosSchema = z.object({ tipo_peca: z.string(), area_direito: z.string(), jurisdicao: z.string(), numero_processo: z.string(), tipo_acao: z.string(), partes: z.object({ recorrente: z.string(), recorrido: z.string() }), pedidos_iniciais: z.array(z.string()), resumo_andamento_processo: z.string(), decisao_recorrida: z.string(), pontos_atacados: z.array(z.string()), fundamentos_recurso: z.array(z.string()), tese_recursal: z.string(), resultado_esperado: z.string(), riscos_e_prazos: z.array(z.string()), restricoes_estilo: z.array(z.string()), perguntas_necessarias: z.array(z.string()), pronto_para_busca: z.boolean(), mensagem_ao_usuario: z.string() });
 const RecursosPrepararBuscaQueryPackSchema = z.object({ termos_principais: z.array(z.string()), termos_secundarios: z.array(z.string()), jurisdicao: z.string(), ramo_direito: z.string(), tipo_acao: z.string(), tipo_recurso: z.string(), beneficio_tema: z.string(), fase_origem: z.string(), objetivo_principal: z.string(), resultado_pretendido: z.string(), pontos_atacados: z.array(z.string()), fundamentos_foco: z.array(z.string()), dispositivos_mencionados: z.array(z.string()), provas_foco: z.array(z.string()), orgao_julgador_alvo: z.string(), excluir_termos: z.array(z.string()), consulta_pronta: z.string() });
-const RecursosSelecionarEvidNciasSchema = z.object({ schema_version: z.string(), documentos_usados: z.array(z.string()), template_principal: z.object({ origem: z.string(), motivo_escolha: z.string(), recorrencia_aproximada: z.enum(["alta", "media", "baixa"]) }), template_estrutura: z.array(z.object({ ordem: z.union([z.string(), z.number()]), titulo_literal: z.string(), descricao_curta: z.string(), trecho_base: z.string() })), template_bloco_padrao: z.array(z.object({ origem: z.string(), label: z.string(), texto: z.string() })), tese_central_recurso: z.string(), estrategia_recurso: z.string(), trechos_relevantes: z.array(z.object({ origem: z.string(), secao_template: z.string(), tipo: z.enum(["estrutura", "sintese_decisao_recorrida", "admissibilidade_tempestividade", "preparo", "preliminar_nulidade", "erro_direito", "erro_fato", "ma_valoracao_prova", "omissao_contradicao", "pedido_efeito_suspensivo", "pedido_reforma_anulacao", "pedido_integracao", "pedido_final", "fecho"]), texto: z.string() })), jurisprudencias: z.array(z.object({ origem: z.string(), tribunal: z.string(), orgao_julgador: z.string(), numero_processo: z.string(), relator: z.string(), data_julgamento: z.string(), tipo: z.enum(["acordao", "ementa", "precedente", "sumula", "tema_repetitivo", "tema_repercussao_geral", "outro"]), titulo_identificacao: z.string(), trecho_citado: z.string(), secao_template_relacionada: z.string() })), decisoes: z.array(z.object({ origem: z.string(), tipo: z.enum(["sentenca", "decisao_interlocutoria", "despacho", "acordao", "outro"]), orgao: z.string(), numero_processo: z.string(), data: z.string(), resultado: z.string(), trecho_dispositivo: z.string(), secao_template_relacionada: z.string() })), placeholders_variaveis: z.array(z.object({ campo: z.string(), onde_aparece: z.string(), exemplo_do_template: z.string() })), checklist_faltando: z.array(z.string()), observacoes_confiabilidade: z.object({ template_confiavel: z.boolean(), nivel_confiabilidade: z.enum(["alto", "medio", "baixo"]), motivo: z.string(), alertas: z.array(z.string()) }) });
+const RecursosSelecionarEvidNciasSchema = z.object({ schema_version: z.string(), documentos_usados: z.array(z.string()), template_principal: z.object({ origem: z.string(), motivo_escolha: z.string(), recorrencia_aproximada: z.enum(["alta", "media", "baixa"]) }), template_estrutura: z.array(z.object({ ordem: z.any(), titulo_literal: z.string(), descricao_curta: z.string(), trecho_base: z.string() })), template_bloco_padrao: z.array(z.object({ origem: z.string(), label: z.string(), texto: z.string() })), tese_central_recurso: z.string(), estrategia_recurso: z.string(), trechos_relevantes: z.array(z.object({ origem: z.string(), secao_template: z.string(), tipo: z.enum(["estrutura", "sintese_decisao_recorrida", "admissibilidade_tempestividade", "preparo", "preliminar_nulidade", "erro_direito", "erro_fato", "ma_valoracao_prova", "omissao_contradicao", "pedido_efeito_suspensivo", "pedido_reforma_anulacao", "pedido_integracao", "pedido_final", "fecho"]), texto: z.string() })), jurisprudencias: z.array(z.object({ origem: z.string(), tribunal: z.string(), orgao_julgador: z.string(), numero_processo: z.string(), relator: z.string(), data_julgamento: z.string(), tipo: z.enum(["acordao", "ementa", "precedente", "sumula", "tema_repetitivo", "tema_repercussao_geral", "outro"]), titulo_identificacao: z.string(), trecho_citado: z.string(), secao_template_relacionada: z.string() })), decisoes: z.array(z.object({ origem: z.string(), tipo: z.enum(["sentenca", "decisao_interlocutoria", "despacho", "acordao", "outro"]), orgao: z.string(), numero_processo: z.string(), data: z.string(), resultado: z.string(), trecho_dispositivo: z.string(), secao_template_relacionada: z.string() })), placeholders_variaveis: z.array(z.object({ campo: z.string(), onde_aparece: z.string(), exemplo_do_template: z.string() })), checklist_faltando: z.array(z.string()), observacoes_confiabilidade: z.object({ template_confiavel: z.boolean(), nivel_confiabilidade: z.enum(["alto", "medio", "baixo"]), motivo: z.string(), alertas: z.array(z.string()) }) });
 const IntakeContrarrazEsConversacionalSchema = z.object({ intake_completo: z.enum(["sim", "nao"]), resumo_entendimento: z.string(), peca_desejada: z.string(), ramo_direito: z.string(), jurisdicao_foro: z.string(), partes: z.object({ recorrente: z.string(), recorrido: z.string() }), tipo_acao_original: z.string(), resumo_do_processo: z.string(), decisao_recorrida: z.string(), tipo_recurso_interposto: z.string(), pontos_atacados_no_recurso: z.array(z.string()), fundamentos_do_recorrente: z.array(z.string()), pontos_para_rebater: z.array(z.string()), preliminares_contrarrazoes: z.array(z.string()), tese_central_contrarrazoes: z.string(), resultado_esperado: z.string(), riscos_e_prazos: z.array(z.string()), itens_faltantes: z.array(z.string()) });
 const IntakeContrarrazEsSchema = z.object({ tipo_peca: z.string(), area_direito: z.string(), jurisdicao: z.string(), numero_processo: z.string(), tipo_acao: z.string(), partes: z.object({ recorrente: z.string(), recorrido: z.string() }), pedidos_iniciais: z.array(z.string()), resumo_andamento_processo: z.string(), decisao_recorrida: z.string(), tipo_recurso: z.string(), pontos_atacados: z.array(z.string()), fundamentos_recorrente: z.array(z.string()), pontos_para_rebater: z.array(z.string()), preliminares_contrarrazoes: z.array(z.string()), tese_contrarrazoes: z.string(), resultado_esperado: z.string(), riscos_e_prazos: z.array(z.string()), restricoes_estilo: z.array(z.string()), perguntas_necessarias: z.array(z.string()), pronto_para_busca: z.boolean(), mensagem_ao_usuario: z.string() });
-const ContrarrazEsPrepararBuscaQueryPackSchema = z.object({ termos_principais: z.array(z.string()), termos_secundarios: z.array(z.string()), jurisdicao: z.string(), ramo_direito: z.string(), tipo_acao: z.string(), beneficio_ou_tema: z.string(), tipo_recurso: z.string(), objetivo_principal: z.string(), estrategia_defensiva: z.array(z.string()), pontos_atacados_pelo_recorrente: z.array(z.string()), fundamentos_foco: z.array(z.string()), resultado_defensivo: z.array(z.string()), jurisprudencia_desejada: z.object({ ativar_busca: z.boolean(), janela_tempo_meses: z.union([z.string(), z.number()]), tribunais_prioritarios: z.array(z.string()) }), excluir_termos: z.array(z.string()), consulta_pronta: z.string() });
-const ContrarrazEsSelecionarEvidNciasSchema = z.object({ schema_version: z.string(), documentos_usados: z.array(z.string()), template_principal: z.object({ origem: z.string(), motivo_escolha: z.string(), recorrencia_aproximada: z.enum(["alta", "media", "baixa"]) }), template_estrutura: z.array(z.object({ ordem: z.union([z.string(), z.number()]), titulo_literal: z.string(), descricao_curta: z.string(), trecho_base: z.string() })), template_bloco_padrao: z.array(z.object({ origem: z.string(), label: z.string(), texto: z.string() })), tese_central_contrarrazoes: z.string(), estrategia_contrarrazoes: z.string(), trechos_relevantes: z.array(z.object({ origem: z.string(), secao_template: z.string(), tipo: z.enum(["estrutura", "sintese_processo_decisao", "inadmissibilidade_nao_conhecimento", "ausencia_dialeticidade_inovacao", "inexistencia_nulidade_cerceamento", "correcao_valoracao_prova", "inexistencia_erro_direito", "inexistencia_erro_fato", "manutencao_decisao", "pedido_nao_conhecimento", "pedido_desprovimento", "pedido_final", "fecho"]), texto: z.string() })), jurisprudencias: z.array(z.object({ origem: z.string(), tribunal: z.string(), orgao_julgador: z.string(), numero_processo: z.string(), relator: z.string(), data_julgamento: z.string(), tipo: z.enum(["acordao", "ementa", "precedente", "sumula", "tema_repetitivo", "tema_repercussao_geral", "outro"]), titulo_identificacao: z.string(), trecho_citado: z.string(), secao_template_relacionada: z.string() })), decisoes: z.array(z.object({ origem: z.string(), tipo: z.enum(["sentenca", "decisao_interlocutoria", "despacho", "acordao", "outro"]), orgao: z.string(), numero_processo: z.string(), data: z.string(), resultado: z.string(), trecho_dispositivo: z.string(), secao_template_relacionada: z.string() })), placeholders_variaveis: z.array(z.object({ campo: z.string(), onde_aparece: z.string(), exemplo_do_template: z.string() })), checklist_faltando: z.array(z.string()), observacoes_confiabilidade: z.object({ template_confiavel: z.boolean(), nivel_confiabilidade: z.enum(["alto", "medio", "baixo"]), motivo: z.string(), alertas: z.array(z.string()) }) });
+const ContrarrazEsPrepararBuscaQueryPackSchema = z.object({ termos_principais: z.array(z.string()), termos_secundarios: z.array(z.string()), jurisdicao: z.string(), ramo_direito: z.string(), tipo_acao: z.string(), beneficio_ou_tema: z.string(), tipo_recurso: z.string(), objetivo_principal: z.string(), estrategia_defensiva: z.array(z.string()), pontos_atacados_pelo_recorrente: z.array(z.string()), fundamentos_foco: z.array(z.string()), resultado_defensivo: z.array(z.string()), jurisprudencia_desejada: z.object({ ativar_busca: z.boolean(), janela_tempo_meses: z.any(), tribunais_prioritarios: z.array(z.string()) }), excluir_termos: z.array(z.string()), consulta_pronta: z.string() });
+const ContrarrazEsSelecionarEvidNciasSchema = z.object({ schema_version: z.string(), documentos_usados: z.array(z.string()), template_principal: z.object({ origem: z.string(), motivo_escolha: z.string(), recorrencia_aproximada: z.enum(["alta", "media", "baixa"]) }), template_estrutura: z.array(z.object({ ordem: z.any(), titulo_literal: z.string(), descricao_curta: z.string(), trecho_base: z.string() })), template_bloco_padrao: z.array(z.object({ origem: z.string(), label: z.string(), texto: z.string() })), tese_central_contrarrazoes: z.string(), estrategia_contrarrazoes: z.string(), trechos_relevantes: z.array(z.object({ origem: z.string(), secao_template: z.string(), tipo: z.enum(["estrutura", "sintese_processo_decisao", "inadmissibilidade_nao_conhecimento", "ausencia_dialeticidade_inovacao", "inexistencia_nulidade_cerceamento", "correcao_valoracao_prova", "inexistencia_erro_direito", "inexistencia_erro_fato", "manutencao_decisao", "pedido_nao_conhecimento", "pedido_desprovimento", "pedido_final", "fecho"]), texto: z.string() })), jurisprudencias: z.array(z.object({ origem: z.string(), tribunal: z.string(), orgao_julgador: z.string(), numero_processo: z.string(), relator: z.string(), data_julgamento: z.string(), tipo: z.enum(["acordao", "ementa", "precedente", "sumula", "tema_repetitivo", "tema_repercussao_geral", "outro"]), titulo_identificacao: z.string(), trecho_citado: z.string(), secao_template_relacionada: z.string() })), decisoes: z.array(z.object({ origem: z.string(), tipo: z.enum(["sentenca", "decisao_interlocutoria", "despacho", "acordao", "outro"]), orgao: z.string(), numero_processo: z.string(), data: z.string(), resultado: z.string(), trecho_dispositivo: z.string(), secao_template_relacionada: z.string() })), placeholders_variaveis: z.array(z.object({ campo: z.string(), onde_aparece: z.string(), exemplo_do_template: z.string() })), checklist_faltando: z.array(z.string()), observacoes_confiabilidade: z.object({ template_confiavel: z.boolean(), nivel_confiabilidade: z.enum(["alto", "medio", "baixo"]), motivo: z.string(), alertas: z.array(z.string()) }) });
 const IntakeCumprimentoDeSentenAConversacionalSchema = z.object({ intake_completo: z.enum(["sim", "nao"]), resumo_entendimento: z.string(), peca_desejada: z.string(), ramo_direito: z.string(), jurisdicao_foro: z.string(), partes: z.object({ exequente: z.string(), executado: z.string() }), tipo_acao_original: z.string(), resumo_do_processo: z.string(), decisao_exequenda: z.string(), tipo_cumprimento: z.string(), objeto_da_execucao: z.array(z.string()), valores_e_calculos: z.string(), historico_de_pagamento_ou_descumprimento: z.string(), medidas_pretendidas: z.array(z.string()), riscos_e_prazos: z.array(z.string()), itens_faltantes: z.array(z.string()) });
 const IntakeCumprimentoDeSentenASchema = z.object({ tipo_peca: z.string(), area_direito: z.string(), jurisdicao: z.string(), numero_processo: z.string(), tipo_acao: z.string(), partes: z.object({ exequente: z.string(), executado: z.string() }), pedidos_iniciais: z.array(z.string()), decisao_exequenda: z.string(), tipo_cumprimento: z.string(), objeto_execucao: z.string(), valores_e_calculos: z.string(), pagamentos_ou_acordos: z.string(), medidas_executivas_pretendidas: z.array(z.string()), riscos_e_prazos: z.array(z.string()), restricoes_estilo: z.array(z.string()), perguntas_necessarias: z.array(z.string()), pronto_para_busca: z.boolean(), mensagem_ao_usuario: z.string() });
 const CumprimentoDeSentenAPrepararBuscaQueryPackSchema = z.object({ termos_principais: z.array(z.string()), termos_secundarios: z.array(z.string()), jurisdicao: z.string(), ramo_direito: z.string(), tipo_acao: z.string(), tipo_cumprimento: z.enum(["", "definitivo", "provisorio"]), tipo_obrigacao: z.enum(["", "pagar_quantia", "obrigacao_de_fazer", "obrigacao_de_nao_fazer", "entregar_coisa"]), objetivo_principal: z.string(), medidas_executivas_foco: z.array(z.string()), elementos_calculo: z.array(z.string()), recorte_temporal_preferencial: z.enum(["", "24_meses", "12_meses"]), excluir_termos: z.array(z.string()), consulta_pronta: z.string() });
-const CumprimentoDeSentenASelecionarEvidNciasSchema = z.object({ schema_version: z.string(), documentos_usados: z.array(z.string()), template_principal: z.object({ origem: z.string(), motivo_escolha: z.string(), tipo_cumprimento: z.enum(["definitivo", "provisorio"]), tipo_obrigacao: z.enum(["pagar_quantia", "fazer", "nao_fazer", "entregar_coisa"]), medidas_execucao_suportadas: z.array(z.enum(["art_523_intimacao_pagamento", "multa_10", "honorarios_10", "penhora", "sisbajud", "renajud", "infojud", "protesto_titulo", "cadastros_inadimplentes", "astreintes", "liquidacao_previa", "cumprimento_obrigacao_fazer", "cumprimento_obrigacao_nao_fazer", "cumprimento_entrega_coisa"])) }), template_estrutura: z.array(z.object({ ordem: z.union([z.string(), z.number()]), titulo_literal: z.string(), descricao_curta: z.string(), trecho_base: z.string() })), template_bloco_padrao: z.array(z.object({ origem: z.string(), label: z.string(), texto: z.string() })), tese_central_cumprimento: z.string(), estrategia_cumprimento: z.string(), trechos_relevantes: z.array(z.object({ origem: z.string(), secao_template: z.string(), tipo: z.enum(["executividade_titulo", "transito_julgado_ou_provisorio", "cabimento", "memoria_calculo_ou_liquidacao", "art_523", "multa_honorarios", "penhora_bloqueio", "obrigacao_fazer_ou_nao_fazer", "astreintes", "pedidos", "fecho"]), texto: z.string(), trecho_ancora: z.string(), confianca: z.enum(["alta", "media", "baixa"]) })), placeholders_variaveis: z.array(z.object({ campo: z.string(), onde_aparece: z.string(), exemplo_do_template: z.string(), criticidade: z.enum(["alta", "media", "baixa"]) })), checklist_faltando: z.array(z.string()), observacoes_confiabilidade: z.object({ template_confiavel: z.boolean(), nivel_confiabilidade: z.enum(["alto", "medio", "baixo"]), score_0_100: z.union([z.string(), z.number()]), motivo: z.string(), alertas: z.array(z.string()) }) });
+const CumprimentoDeSentenASelecionarEvidNciasSchema = z.object({ schema_version: z.string(), documentos_usados: z.array(z.string()), template_principal: z.object({ origem: z.string(), motivo_escolha: z.string(), tipo_cumprimento: z.enum(["definitivo", "provisorio"]), tipo_obrigacao: z.enum(["pagar_quantia", "fazer", "nao_fazer", "entregar_coisa"]), medidas_execucao_suportadas: z.array(z.enum(["art_523_intimacao_pagamento", "multa_10", "honorarios_10", "penhora", "sisbajud", "renajud", "infojud", "protesto_titulo", "cadastros_inadimplentes", "astreintes", "liquidacao_previa", "cumprimento_obrigacao_fazer", "cumprimento_obrigacao_nao_fazer", "cumprimento_entrega_coisa"])) }), template_estrutura: z.array(z.object({ ordem: z.any(), titulo_literal: z.string(), descricao_curta: z.string(), trecho_base: z.string() })), template_bloco_padrao: z.array(z.object({ origem: z.string(), label: z.string(), texto: z.string() })), tese_central_cumprimento: z.string(), estrategia_cumprimento: z.string(), trechos_relevantes: z.array(z.object({ origem: z.string(), secao_template: z.string(), tipo: z.enum(["executividade_titulo", "transito_julgado_ou_provisorio", "cabimento", "memoria_calculo_ou_liquidacao", "art_523", "multa_honorarios", "penhora_bloqueio", "obrigacao_fazer_ou_nao_fazer", "astreintes", "pedidos", "fecho"]), texto: z.string(), trecho_ancora: z.string(), confianca: z.enum(["alta", "media", "baixa"]) })), placeholders_variaveis: z.array(z.object({ campo: z.string(), onde_aparece: z.string(), exemplo_do_template: z.string(), criticidade: z.enum(["alta", "media", "baixa"]) })), checklist_faltando: z.array(z.string()), observacoes_confiabilidade: z.object({ template_confiavel: z.boolean(), nivel_confiabilidade: z.enum(["alto", "medio", "baixo"]), score_0_100: z.any(), motivo: z.string(), alertas: z.array(z.string()) }) });
 const IntakePetiEsGeraisConversacionalSchema = z.object({ intake_completo: z.enum(["sim", "nao"]), resumo_entendimento: z.string(), peca_desejada: z.string(), ramo_direito: z.string(), jurisdicao_foro: z.string(), partes: z.object({ autor: z.string(), reu: z.string() }), posicao_da_parte: z.string(), tipo_acao_original: z.string(), resumo_do_processo: z.string(), fato_gerador_da_peticao: z.string(), pedido_principal: z.string(), pedidos_secundarios: z.array(z.string()), fundamentos_basicos: z.array(z.string()), documentos_ou_provas: z.array(z.string()), riscos_e_prazos: z.array(z.string()), itens_faltantes: z.array(z.string()) });
 const IntakePetiEsGeraisSchema = z.object({ tipo_peca: z.string(), area_direito: z.string(), jurisdicao: z.string(), numero_processo: z.string(), tipo_acao: z.string(), partes: z.object({ autor: z.string(), reu: z.string() }), fatos_resumo: z.string(), pedidos: z.array(z.string()), valores_envolvidos: z.string(), urgencia_ou_tutela: z.string(), provas_disponiveis: z.array(z.string()), riscos_e_prazos: z.array(z.string()), restricoes_estilo: z.array(z.string()), perguntas_necessarias: z.array(z.string()), pronto_para_busca: z.boolean(), mensagem_ao_usuario: z.string() });
 const PetiEsGeraisPrepararBuscaQueryPackSchema = z.object({ termos_principais: z.array(z.string()), termos_secundarios: z.array(z.string()), jurisdicao: z.string(), ramo_direito: z.string(), tipo_acao: z.string(), tipo_cumprimento: z.enum(["", "definitivo", "provisorio"]), objetivo_principal: z.string(), medidas_executivas_foco: z.array(z.string()), excluir_termos: z.array(z.string()), consulta_pronta: z.string() });
-const PetiEsGeraisSelecionarEvidNciasSchema = z.object({ schema_version: z.string(), documentos_usados: z.array(z.string()), template_principal: z.object({ origem: z.string(), motivo_escolha: z.string(), tipo_peticao_geral_inferido: z.string() }), template_estrutura: z.array(z.object({ ordem: z.union([z.string(), z.number()]), titulo_literal: z.string(), descricao_curta: z.string(), trecho_base: z.string() })), template_bloco_padrao: z.array(z.object({ origem: z.string(), label: z.string(), texto: z.string() })), tipo_peticao_geral: z.enum(["manifestacao_sobre_documentos", "impugnacao", "juntada_documentos", "pedido_prazo", "pedido_diligencia", "esclarecimentos", "habilitacao_substabelecimento", "retificacao", "peticao_expediente", "outro_nao_identificado"]), tese_central: z.string(), estrategia: z.string(), trechos_relevantes: z.array(z.object({ origem: z.string(), secao_template: z.string(), tipo: z.enum(["enderecamento", "identificacao_processo_partes", "contextualizacao", "fundamentacao_padrao", "pedido_principal", "pedido_subsidiario", "requerimento_intimacao", "juntada_documentos", "prazo", "diligencias", "protesta_provas", "fecho"]), texto: z.string(), reutilizacao: z.enum(["bloco_padrao", "adaptar_variaveis", "evitar_dados_caso"]) })), placeholders_variaveis: z.array(z.object({ campo: z.string(), onde_aparece: z.string(), exemplo_do_template: z.string(), criticidade: z.enum(["alta", "media", "baixa"]) })), checklist_faltando: z.array(z.string()), observacoes_confiabilidade: z.object({ template_confiavel: z.boolean(), score_0_100: z.union([z.string(), z.number()]), motivo: z.string(), alertas: z.array(z.string()), documentos_conflitantes: z.array(z.string()) }) });
-const SaDaJsonIniciaisSchema = z.object({ schema_version: z.string(), doc_type: z.enum(["iniciais", "contestacao", "replica", "memoriais", "recursos", "contrarrazoes", "cumprimento_de_sentenca", "peticoes_gerais"]), doc_subtype: z.string(), doc: z.object({ title: z.string(), sections: z.array(z.object({ ordem: z.union([z.string(), z.number()]), titulo_literal: z.string(), blocks: z.array(z.object({ block_id: z.string(), type: z.enum(["paragraph", "list", "table", "quote"]), text: z.string(), ordered: z.boolean(), items: z.array(z.string()), rows: z.array(z.array(z.string())), source: z.string() })) })) }), structure_map: z.object({ block_id_universais: z.array(z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"])), block_id_iniciais: z.array(z.enum(["competencia_foro_vara", "qualificacao_partes", "fatos_detalhados", "tutela", "valor_causa", "rol_documentos"])), base_required: z.array(z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"])), iniciais_required: z.array(z.enum(["competencia_foro_vara", "qualificacao_partes", "fatos_detalhados", "valor_causa", "rol_documentos"])) }), meta: z.object({ documentos_usados: z.array(z.string()), template_principal: z.object({ origem: z.string(), motivo_escolha: z.string(), recorrencia_aproximada: z.enum(["alta", "media", "baixa"]) }), tese_central: z.string(), estrategia: z.string(), checklist_faltando: z.array(z.string()), placeholders_encontrados: z.array(z.string()), block_coverage: z.object({ base: z.array(z.object({ block_id: z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"]), present: z.boolean(), secao_template: z.string(), exemplo: z.string() })), iniciais: z.array(z.object({ block_id: z.enum(["competencia_foro_vara", "qualificacao_partes", "fatos_detalhados", "tutela", "valor_causa", "rol_documentos"]), present: z.boolean(), secao_template: z.string(), exemplo: z.string() })) }), observacoes_confiabilidade: z.object({ template_confiavel: z.boolean(), nivel_confiabilidade: z.enum(["alto", "medio", "baixo"]), motivo: z.string(), alertas: z.array(z.string()) }), warnings: z.array(z.string()) }) });
-const SaDaJsonContestaOSchema = z.object({ schema_version: z.string(), doc_type: z.enum(["iniciais", "contestacao", "replica", "memoriais", "recursos", "contrarrazoes", "cumprimento_de_sentenca", "peticoes_gerais"]), doc_subtype: z.string(), doc: z.object({ title: z.string(), sections: z.array(z.object({ ordem: z.union([z.string(), z.number()]), titulo_literal: z.string(), blocks: z.array(z.object({ block_id: z.string(), type: z.enum(["paragraph", "list", "table", "quote"]), text: z.string(), ordered: z.boolean(), items: z.array(z.string()), rows: z.array(z.array(z.string())), source: z.string() })) })) }), structure_map: z.object({ block_id_universais: z.array(z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"])), block_id_contestacao: z.array(z.enum(["tempestividade", "preliminares", "merito_impugnacao", "impugnacao_documentos"])), base_required: z.array(z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"])), contestacao_required: z.array(z.enum(["tempestividade", "preliminares", "merito_impugnacao"])) }), meta: z.object({ documentos_usados: z.array(z.string()), template_principal: z.object({ origem: z.string(), motivo_escolha: z.string(), recorrencia_aproximada: z.enum(["alta", "media", "baixa"]) }), tese_central: z.string(), estrategia: z.string(), checklist_faltando: z.array(z.string()), placeholders_encontrados: z.array(z.string()), block_coverage: z.object({ base: z.array(z.object({ block_id: z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"]), present: z.boolean(), secao_template: z.string(), exemplo: z.string() })), contestacao: z.array(z.object({ block_id: z.enum(["tempestividade", "preliminares", "merito_impugnacao", "impugnacao_documentos"]), present: z.boolean(), secao_template: z.string(), exemplo: z.string() })) }), observacoes_confiabilidade: z.object({ template_confiavel: z.boolean(), nivel_confiabilidade: z.enum(["alto", "medio", "baixo"]), motivo: z.string(), alertas: z.array(z.string()) }), warnings: z.array(z.string()) }) });
-const SaDaJsonRPlicaSchema = z.object({ schema_version: z.string(), doc_type: z.enum(["iniciais", "contestacao", "replica", "memoriais", "recursos", "contrarrazoes", "cumprimento_de_sentenca", "peticoes_gerais"]), doc_subtype: z.string(), doc: z.object({ title: z.string(), sections: z.array(z.object({ ordem: z.union([z.string(), z.number()]), titulo_literal: z.string(), blocks: z.array(z.object({ block_id: z.string(), type: z.enum(["paragraph", "list", "table", "quote"]), text: z.string(), ordered: z.boolean(), items: z.array(z.string()), rows: z.array(z.array(z.string())), source: z.string() })) })) }), structure_map: z.object({ block_id_universais: z.array(z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"])), block_id_replica: z.array(z.enum(["impugnacao_preliminares", "impugnacao_merito", "impugnacao_documentos_reu", "reforco_pedidos_iniciais", "ajuste_provas"])), base_required: z.array(z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"])), replica_required: z.array(z.enum(["impugnacao_preliminares", "impugnacao_merito", "reforco_pedidos_iniciais", "ajuste_provas"])) }), meta: z.object({ documentos_usados: z.array(z.string()), template_principal: z.object({ origem: z.string(), motivo_escolha: z.string(), recorrencia_aproximada: z.enum(["alta", "media", "baixa"]) }), tese_central: z.string(), estrategia: z.string(), checklist_faltando: z.array(z.string()), placeholders_encontrados: z.array(z.string()), block_coverage: z.object({ base: z.array(z.object({ block_id: z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"]), present: z.boolean(), secao_template: z.string(), exemplo: z.string() })), replica: z.array(z.object({ block_id: z.enum(["impugnacao_preliminares", "impugnacao_merito", "impugnacao_documentos_reu", "reforco_pedidos_iniciais", "ajuste_provas"]), present: z.boolean(), secao_template: z.string(), exemplo: z.string() })) }), observacoes_confiabilidade: z.object({ template_confiavel: z.boolean(), nivel_confiabilidade: z.enum(["alto", "medio", "baixo"]), motivo: z.string(), alertas: z.array(z.string()) }), warnings: z.array(z.string()) }) });
-const SaDaJsonMemoriaisSchema = z.object({ schema_version: z.string(), doc_type: z.enum(["iniciais", "contestacao", "replica", "memoriais", "recursos", "contrarrazoes", "cumprimento_de_sentenca", "peticoes_gerais"]), doc_subtype: z.string(), doc: z.object({ title: z.string(), sections: z.array(z.object({ ordem: z.union([z.string(), z.number()]), titulo_literal: z.string(), blocks: z.array(z.object({ block_id: z.string(), type: z.enum(["paragraph", "list", "table", "quote"]), text: z.string(), ordered: z.boolean(), items: z.array(z.string()), rows: z.array(z.array(z.string())), source: z.string() })) })) }), structure_map: z.object({ block_id_universais: z.array(z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"])), block_id_memoriais: z.array(z.enum(["pontos_controvertidos_tese", "pontos_para_decisao", "pedido_objetivo"])), base_required: z.array(z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"])), memoriais_required: z.array(z.enum(["pontos_controvertidos_tese", "pontos_para_decisao", "pedido_objetivo"])) }), meta: z.object({ documentos_usados: z.array(z.string()), template_principal: z.object({ origem: z.string(), motivo_escolha: z.string(), recorrencia_aproximada: z.enum(["alta", "media", "baixa"]) }), tese_central: z.string(), estrategia: z.string(), checklist_faltando: z.array(z.string()), placeholders_encontrados: z.array(z.string()), block_coverage: z.object({ base: z.array(z.object({ block_id: z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"]), present: z.boolean(), secao_template: z.string(), exemplo: z.string() })), memoriais: z.array(z.object({ block_id: z.enum(["pontos_controvertidos_tese", "pontos_para_decisao", "pedido_objetivo"]), present: z.boolean(), secao_template: z.string(), exemplo: z.string() })) }), observacoes_confiabilidade: z.object({ template_confiavel: z.boolean(), nivel_confiabilidade: z.enum(["alto", "medio", "baixo"]), motivo: z.string(), alertas: z.array(z.string()) }), warnings: z.array(z.string()) }) });
-const SaDaJsonRecursosSchema = z.object({ schema_version: z.string(), doc_type: z.enum(["iniciais", "contestacao", "replica", "memoriais", "recursos", "contrarrazoes", "cumprimento_de_sentenca", "peticoes_gerais"]), doc_subtype: z.string(), doc: z.object({ title: z.string(), sections: z.array(z.object({ ordem: z.union([z.string(), z.number()]), titulo_literal: z.string(), blocks: z.array(z.object({ block_id: z.string(), type: z.enum(["paragraph", "list", "table", "quote"]), text: z.string(), ordered: z.boolean(), items: z.array(z.string()), rows: z.array(z.array(z.string())), source: z.string() })) })) }), structure_map: z.object({ block_id_universais: z.array(z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"])), block_id_recursos: z.array(z.enum(["cabimento", "preparo_gratuidade", "razoes_recursais", "efeito_suspensivo"])), base_required: z.array(z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"])), recursos_required: z.array(z.enum(["cabimento", "razoes_recursais"])) }), meta: z.object({ documentos_usados: z.array(z.string()), template_principal: z.object({ origem: z.string(), motivo_escolha: z.string(), recorrencia_aproximada: z.enum(["alta", "media", "baixa"]) }), tese_central: z.string(), estrategia: z.string(), checklist_faltando: z.array(z.string()), placeholders_encontrados: z.array(z.string()), block_coverage: z.object({ base: z.array(z.object({ block_id: z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"]), present: z.boolean(), secao_template: z.string(), exemplo: z.string() })), recursos: z.array(z.object({ block_id: z.enum(["cabimento", "preparo_gratuidade", "razoes_recursais", "efeito_suspensivo"]), present: z.boolean(), secao_template: z.string(), exemplo: z.string() })) }), observacoes_confiabilidade: z.object({ template_confiavel: z.boolean(), nivel_confiabilidade: z.enum(["alto", "medio", "baixo"]), motivo: z.string(), alertas: z.array(z.string()) }), warnings: z.array(z.string()) }) });
-const SaDaJsonContrarrazEsSchema = z.object({ schema_version: z.string(), doc_type: z.enum(["iniciais", "contestacao", "replica", "memoriais", "recursos", "contrarrazoes", "cumprimento_de_sentenca", "peticoes_gerais"]), doc_subtype: z.string(), doc: z.object({ title: z.string(), sections: z.array(z.object({ ordem: z.union([z.string(), z.number()]), titulo_literal: z.string(), blocks: z.array(z.object({ block_id: z.string(), type: z.enum(["paragraph", "list", "table", "quote"]), text: z.string(), ordered: z.boolean(), items: z.array(z.string()), rows: z.array(z.array(z.string())), source: z.string() })) })) }), structure_map: z.object({ block_id_universais: z.array(z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"])), block_id_contrarrazoes: z.array(z.enum(["preliminar_nao_conhecimento", "rebater_fundamentos", "pedido_nao_conhecimento_desprovimento"])), base_required: z.array(z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"])), contrarrazoes_required: z.array(z.enum(["rebater_fundamentos", "pedido_nao_conhecimento_desprovimento"])) }), meta: z.object({ documentos_usados: z.array(z.string()), template_principal: z.object({ origem: z.string(), motivo_escolha: z.string(), recorrencia_aproximada: z.enum(["alta", "media", "baixa"]) }), tese_central: z.string(), estrategia: z.string(), checklist_faltando: z.array(z.string()), placeholders_encontrados: z.array(z.string()), block_coverage: z.object({ base: z.array(z.object({ block_id: z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"]), present: z.boolean(), secao_template: z.string(), exemplo: z.string() })), contrarrazoes: z.array(z.object({ block_id: z.enum(["preliminar_nao_conhecimento", "rebater_fundamentos", "pedido_nao_conhecimento_desprovimento"]), present: z.boolean(), secao_template: z.string(), exemplo: z.string() })) }), observacoes_confiabilidade: z.object({ template_confiavel: z.boolean(), nivel_confiabilidade: z.enum(["alto", "medio", "baixo"]), motivo: z.string(), alertas: z.array(z.string()) }), warnings: z.array(z.string()) }) });
-const SaDaJsonCumprimentoDeSentenASchema = z.object({ schema_version: z.string(), doc_type: z.enum(["iniciais", "contestacao", "replica", "memoriais", "recursos", "contrarrazoes", "cumprimento_de_sentenca", "peticoes_gerais"]), doc_subtype: z.string(), doc: z.object({ title: z.string(), sections: z.array(z.object({ ordem: z.union([z.string(), z.number()]), titulo_literal: z.string(), blocks: z.array(z.object({ block_id: z.string(), type: z.enum(["paragraph", "list", "table", "quote"]), text: z.string(), ordered: z.boolean(), items: z.array(z.string()), rows: z.array(z.array(z.string())), source: z.string() })) })) }), structure_map: z.object({ block_id_universais: z.array(z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"])), block_id_cumprimento_sentenca: z.array(z.enum(["titulo_executivo", "transito_julgado", "delimitacao_objeto", "demonstrativo_debito", "intimacao_pagar_multa", "medidas_executivas", "indices_atualizacao"])), base_required: z.array(z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"])), cumprimento_sentenca_required: z.array(z.enum(["titulo_executivo", "transito_julgado", "delimitacao_objeto", "demonstrativo_debito", "intimacao_pagar_multa", "medidas_executivas"])) }), meta: z.object({ documentos_usados: z.array(z.string()), template_principal: z.object({ origem: z.string(), motivo_escolha: z.string(), recorrencia_aproximada: z.enum(["alta", "media", "baixa"]) }), tese_central: z.string(), estrategia: z.string(), checklist_faltando: z.array(z.string()), placeholders_encontrados: z.array(z.string()), block_coverage: z.object({ base: z.array(z.object({ block_id: z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"]), present: z.boolean(), secao_template: z.string(), exemplo: z.string() })), cumprimento_de_sentenca: z.array(z.object({ block_id: z.enum(["titulo_executivo", "transito_julgado", "delimitacao_objeto", "demonstrativo_debito", "intimacao_pagar_multa", "medidas_executivas", "indices_atualizacao"]), present: z.boolean(), secao_template: z.string(), exemplo: z.string() })) }), observacoes_confiabilidade: z.object({ template_confiavel: z.boolean(), nivel_confiabilidade: z.enum(["alto", "medio", "baixo"]), motivo: z.string(), alertas: z.array(z.string()) }), warnings: z.array(z.string()) }) });
-const SaDaJsonPetiEsGeraisSchema = z.object({ schema_version: z.string(), doc_type: z.enum(["iniciais", "contestacao", "replica", "memoriais", "recursos", "contrarrazoes", "cumprimento_de_sentenca", "peticoes_gerais"]), doc_subtype: z.string(), doc: z.object({ title: z.string(), sections: z.array(z.object({ ordem: z.union([z.string(), z.number()]), titulo_literal: z.string(), blocks: z.array(z.object({ block_id: z.string(), type: z.enum(["paragraph", "list", "table", "quote"]), text: z.string(), ordered: z.boolean(), items: z.array(z.string()), rows: z.array(z.array(z.string())), source: z.string() })) })) }), structure_map: z.object({ block_id_universais: z.array(z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"])), block_id_peticoes_gerais: z.array(z.enum(["indicacao_evento", "pedido_direto_fundamento", "juntada_documentos"])), base_required: z.array(z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"])), peticoes_gerais_required: z.array(z.enum(["indicacao_evento", "pedido_direto_fundamento"])) }), meta: z.object({ documentos_usados: z.array(z.string()), template_principal: z.object({ origem: z.string(), motivo_escolha: z.string(), recorrencia_aproximada: z.enum(["alta", "media", "baixa"]) }), tese_central: z.string(), estrategia: z.string(), checklist_faltando: z.array(z.string()), placeholders_encontrados: z.array(z.string()), block_coverage: z.object({ base: z.array(z.object({ block_id: z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"]), present: z.boolean(), secao_template: z.string(), exemplo: z.string() })), peticoes_gerais: z.array(z.object({ block_id: z.enum(["indicacao_evento", "pedido_direto_fundamento", "juntada_documentos"]), present: z.boolean(), secao_template: z.string(), exemplo: z.string() })) }), observacoes_confiabilidade: z.object({ template_confiavel: z.boolean(), nivel_confiabilidade: z.enum(["alto", "medio", "baixo"]), motivo: z.string(), alertas: z.array(z.string()) }), warnings: z.array(z.string()) }) });
+const PetiEsGeraisSelecionarEvidNciasSchema = z.object({ schema_version: z.string(), documentos_usados: z.array(z.string()), template_principal: z.object({ origem: z.string(), motivo_escolha: z.string(), tipo_peticao_geral_inferido: z.string() }), template_estrutura: z.array(z.object({ ordem: z.any(), titulo_literal: z.string(), descricao_curta: z.string(), trecho_base: z.string() })), template_bloco_padrao: z.array(z.object({ origem: z.string(), label: z.string(), texto: z.string() })), tipo_peticao_geral: z.enum(["manifestacao_sobre_documentos", "impugnacao", "juntada_documentos", "pedido_prazo", "pedido_diligencia", "esclarecimentos", "habilitacao_substabelecimento", "retificacao", "peticao_expediente", "outro_nao_identificado"]), tese_central: z.string(), estrategia: z.string(), trechos_relevantes: z.array(z.object({ origem: z.string(), secao_template: z.string(), tipo: z.enum(["enderecamento", "identificacao_processo_partes", "contextualizacao", "fundamentacao_padrao", "pedido_principal", "pedido_subsidiario", "requerimento_intimacao", "juntada_documentos", "prazo", "diligencias", "protesta_provas", "fecho"]), texto: z.string(), reutilizacao: z.enum(["bloco_padrao", "adaptar_variaveis", "evitar_dados_caso"]) })), placeholders_variaveis: z.array(z.object({ campo: z.string(), onde_aparece: z.string(), exemplo_do_template: z.string(), criticidade: z.enum(["alta", "media", "baixa"]) })), checklist_faltando: z.array(z.string()), observacoes_confiabilidade: z.object({ template_confiavel: z.boolean(), score_0_100: z.any(), motivo: z.string(), alertas: z.array(z.string()), documentos_conflitantes: z.array(z.string()) }) });
+const SaDaJsonIniciaisSchema = z.object({ schema_version: z.string(), doc_type: z.enum(["iniciais", "contestacao", "replica", "memoriais", "recursos", "contrarrazoes", "cumprimento_de_sentenca", "peticoes_gerais"]), doc_subtype: z.string(), doc: z.object({ title: z.string(), sections: z.array(z.object({ ordem: z.any(), titulo_literal: z.string(), blocks: z.array(z.object({ block_id: z.string(), type: z.enum(["paragraph", "list", "table", "quote"]), text: z.string(), ordered: z.boolean(), items: z.array(z.string()), rows: z.array(z.array(z.string())), source: z.string() })) })) }), structure_map: z.object({ block_id_universais: z.array(z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"])), block_id_iniciais: z.array(z.enum(["competencia_foro_vara", "qualificacao_partes", "fatos_detalhados", "tutela", "valor_causa", "rol_documentos"])), base_required: z.array(z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"])), iniciais_required: z.array(z.enum(["competencia_foro_vara", "qualificacao_partes", "fatos_detalhados", "valor_causa", "rol_documentos"])) }), meta: z.object({ documentos_usados: z.array(z.string()), template_principal: z.object({ origem: z.string(), motivo_escolha: z.string(), recorrencia_aproximada: z.enum(["alta", "media", "baixa"]) }), tese_central: z.string(), estrategia: z.string(), checklist_faltando: z.array(z.string()), placeholders_encontrados: z.array(z.string()), block_coverage: z.object({ base: z.array(z.object({ block_id: z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"]), present: z.boolean(), secao_template: z.string(), exemplo: z.string() })), iniciais: z.array(z.object({ block_id: z.enum(["competencia_foro_vara", "qualificacao_partes", "fatos_detalhados", "tutela", "valor_causa", "rol_documentos"]), present: z.boolean(), secao_template: z.string(), exemplo: z.string() })) }), observacoes_confiabilidade: z.object({ template_confiavel: z.boolean(), nivel_confiabilidade: z.enum(["alto", "medio", "baixo"]), motivo: z.string(), alertas: z.array(z.string()) }), warnings: z.array(z.string()) }) });
+const SaDaJsonContestaOSchema = z.object({ schema_version: z.string(), doc_type: z.enum(["iniciais", "contestacao", "replica", "memoriais", "recursos", "contrarrazoes", "cumprimento_de_sentenca", "peticoes_gerais"]), doc_subtype: z.string(), doc: z.object({ title: z.string(), sections: z.array(z.object({ ordem: z.any(), titulo_literal: z.string(), blocks: z.array(z.object({ block_id: z.string(), type: z.enum(["paragraph", "list", "table", "quote"]), text: z.string(), ordered: z.boolean(), items: z.array(z.string()), rows: z.array(z.array(z.string())), source: z.string() })) })) }), structure_map: z.object({ block_id_universais: z.array(z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"])), block_id_contestacao: z.array(z.enum(["tempestividade", "preliminares", "merito_impugnacao", "impugnacao_documentos"])), base_required: z.array(z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"])), contestacao_required: z.array(z.enum(["tempestividade", "preliminares", "merito_impugnacao"])) }), meta: z.object({ documentos_usados: z.array(z.string()), template_principal: z.object({ origem: z.string(), motivo_escolha: z.string(), recorrencia_aproximada: z.enum(["alta", "media", "baixa"]) }), tese_central: z.string(), estrategia: z.string(), checklist_faltando: z.array(z.string()), placeholders_encontrados: z.array(z.string()), block_coverage: z.object({ base: z.array(z.object({ block_id: z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"]), present: z.boolean(), secao_template: z.string(), exemplo: z.string() })), contestacao: z.array(z.object({ block_id: z.enum(["tempestividade", "preliminares", "merito_impugnacao", "impugnacao_documentos"]), present: z.boolean(), secao_template: z.string(), exemplo: z.string() })) }), observacoes_confiabilidade: z.object({ template_confiavel: z.boolean(), nivel_confiabilidade: z.enum(["alto", "medio", "baixo"]), motivo: z.string(), alertas: z.array(z.string()) }), warnings: z.array(z.string()) }) });
+const SaDaJsonRPlicaSchema = z.object({ schema_version: z.string(), doc_type: z.enum(["iniciais", "contestacao", "replica", "memoriais", "recursos", "contrarrazoes", "cumprimento_de_sentenca", "peticoes_gerais"]), doc_subtype: z.string(), doc: z.object({ title: z.string(), sections: z.array(z.object({ ordem: z.any(), titulo_literal: z.string(), blocks: z.array(z.object({ block_id: z.string(), type: z.enum(["paragraph", "list", "table", "quote"]), text: z.string(), ordered: z.boolean(), items: z.array(z.string()), rows: z.array(z.array(z.string())), source: z.string() })) })) }), structure_map: z.object({ block_id_universais: z.array(z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"])), block_id_replica: z.array(z.enum(["impugnacao_preliminares", "impugnacao_merito", "impugnacao_documentos_reu", "reforco_pedidos_iniciais", "ajuste_provas"])), base_required: z.array(z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"])), replica_required: z.array(z.enum(["impugnacao_preliminares", "impugnacao_merito", "reforco_pedidos_iniciais", "ajuste_provas"])) }), meta: z.object({ documentos_usados: z.array(z.string()), template_principal: z.object({ origem: z.string(), motivo_escolha: z.string(), recorrencia_aproximada: z.enum(["alta", "media", "baixa"]) }), tese_central: z.string(), estrategia: z.string(), checklist_faltando: z.array(z.string()), placeholders_encontrados: z.array(z.string()), block_coverage: z.object({ base: z.array(z.object({ block_id: z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"]), present: z.boolean(), secao_template: z.string(), exemplo: z.string() })), replica: z.array(z.object({ block_id: z.enum(["impugnacao_preliminares", "impugnacao_merito", "impugnacao_documentos_reu", "reforco_pedidos_iniciais", "ajuste_provas"]), present: z.boolean(), secao_template: z.string(), exemplo: z.string() })) }), observacoes_confiabilidade: z.object({ template_confiavel: z.boolean(), nivel_confiabilidade: z.enum(["alto", "medio", "baixo"]), motivo: z.string(), alertas: z.array(z.string()) }), warnings: z.array(z.string()) }) });
+const SaDaJsonMemoriaisSchema = z.object({ schema_version: z.string(), doc_type: z.enum(["iniciais", "contestacao", "replica", "memoriais", "recursos", "contrarrazoes", "cumprimento_de_sentenca", "peticoes_gerais"]), doc_subtype: z.string(), doc: z.object({ title: z.string(), sections: z.array(z.object({ ordem: z.any(), titulo_literal: z.string(), blocks: z.array(z.object({ block_id: z.string(), type: z.enum(["paragraph", "list", "table", "quote"]), text: z.string(), ordered: z.boolean(), items: z.array(z.string()), rows: z.array(z.array(z.string())), source: z.string() })) })) }), structure_map: z.object({ block_id_universais: z.array(z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"])), block_id_memoriais: z.array(z.enum(["pontos_controvertidos_tese", "pontos_para_decisao", "pedido_objetivo"])), base_required: z.array(z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"])), memoriais_required: z.array(z.enum(["pontos_controvertidos_tese", "pontos_para_decisao", "pedido_objetivo"])) }), meta: z.object({ documentos_usados: z.array(z.string()), template_principal: z.object({ origem: z.string(), motivo_escolha: z.string(), recorrencia_aproximada: z.enum(["alta", "media", "baixa"]) }), tese_central: z.string(), estrategia: z.string(), checklist_faltando: z.array(z.string()), placeholders_encontrados: z.array(z.string()), block_coverage: z.object({ base: z.array(z.object({ block_id: z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"]), present: z.boolean(), secao_template: z.string(), exemplo: z.string() })), memoriais: z.array(z.object({ block_id: z.enum(["pontos_controvertidos_tese", "pontos_para_decisao", "pedido_objetivo"]), present: z.boolean(), secao_template: z.string(), exemplo: z.string() })) }), observacoes_confiabilidade: z.object({ template_confiavel: z.boolean(), nivel_confiabilidade: z.enum(["alto", "medio", "baixo"]), motivo: z.string(), alertas: z.array(z.string()) }), warnings: z.array(z.string()) }) });
+const SaDaJsonRecursosSchema = z.object({ schema_version: z.string(), doc_type: z.enum(["iniciais", "contestacao", "replica", "memoriais", "recursos", "contrarrazoes", "cumprimento_de_sentenca", "peticoes_gerais"]), doc_subtype: z.string(), doc: z.object({ title: z.string(), sections: z.array(z.object({ ordem: z.any(), titulo_literal: z.string(), blocks: z.array(z.object({ block_id: z.string(), type: z.enum(["paragraph", "list", "table", "quote"]), text: z.string(), ordered: z.boolean(), items: z.array(z.string()), rows: z.array(z.array(z.string())), source: z.string() })) })) }), structure_map: z.object({ block_id_universais: z.array(z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"])), block_id_recursos: z.array(z.enum(["cabimento", "preparo_gratuidade", "razoes_recursais", "efeito_suspensivo"])), base_required: z.array(z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"])), recursos_required: z.array(z.enum(["cabimento", "razoes_recursais"])) }), meta: z.object({ documentos_usados: z.array(z.string()), template_principal: z.object({ origem: z.string(), motivo_escolha: z.string(), recorrencia_aproximada: z.enum(["alta", "media", "baixa"]) }), tese_central: z.string(), estrategia: z.string(), checklist_faltando: z.array(z.string()), placeholders_encontrados: z.array(z.string()), block_coverage: z.object({ base: z.array(z.object({ block_id: z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"]), present: z.boolean(), secao_template: z.string(), exemplo: z.string() })), recursos: z.array(z.object({ block_id: z.enum(["cabimento", "preparo_gratuidade", "razoes_recursais", "efeito_suspensivo"]), present: z.boolean(), secao_template: z.string(), exemplo: z.string() })) }), observacoes_confiabilidade: z.object({ template_confiavel: z.boolean(), nivel_confiabilidade: z.enum(["alto", "medio", "baixo"]), motivo: z.string(), alertas: z.array(z.string()) }), warnings: z.array(z.string()) }) });
+const SaDaJsonContrarrazEsSchema = z.object({ schema_version: z.string(), doc_type: z.enum(["iniciais", "contestacao", "replica", "memoriais", "recursos", "contrarrazoes", "cumprimento_de_sentenca", "peticoes_gerais"]), doc_subtype: z.string(), doc: z.object({ title: z.string(), sections: z.array(z.object({ ordem: z.any(), titulo_literal: z.string(), blocks: z.array(z.object({ block_id: z.string(), type: z.enum(["paragraph", "list", "table", "quote"]), text: z.string(), ordered: z.boolean(), items: z.array(z.string()), rows: z.array(z.array(z.string())), source: z.string() })) })) }), structure_map: z.object({ block_id_universais: z.array(z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"])), block_id_contrarrazoes: z.array(z.enum(["preliminar_nao_conhecimento", "rebater_fundamentos", "pedido_nao_conhecimento_desprovimento"])), base_required: z.array(z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"])), contrarrazoes_required: z.array(z.enum(["rebater_fundamentos", "pedido_nao_conhecimento_desprovimento"])) }), meta: z.object({ documentos_usados: z.array(z.string()), template_principal: z.object({ origem: z.string(), motivo_escolha: z.string(), recorrencia_aproximada: z.enum(["alta", "media", "baixa"]) }), tese_central: z.string(), estrategia: z.string(), checklist_faltando: z.array(z.string()), placeholders_encontrados: z.array(z.string()), block_coverage: z.object({ base: z.array(z.object({ block_id: z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"]), present: z.boolean(), secao_template: z.string(), exemplo: z.string() })), contrarrazoes: z.array(z.object({ block_id: z.enum(["preliminar_nao_conhecimento", "rebater_fundamentos", "pedido_nao_conhecimento_desprovimento"]), present: z.boolean(), secao_template: z.string(), exemplo: z.string() })) }), observacoes_confiabilidade: z.object({ template_confiavel: z.boolean(), nivel_confiabilidade: z.enum(["alto", "medio", "baixo"]), motivo: z.string(), alertas: z.array(z.string()) }), warnings: z.array(z.string()) }) });
+const SaDaJsonCumprimentoDeSentenASchema = z.object({ schema_version: z.string(), doc_type: z.enum(["iniciais", "contestacao", "replica", "memoriais", "recursos", "contrarrazoes", "cumprimento_de_sentenca", "peticoes_gerais"]), doc_subtype: z.string(), doc: z.object({ title: z.string(), sections: z.array(z.object({ ordem: z.any(), titulo_literal: z.string(), blocks: z.array(z.object({ block_id: z.string(), type: z.enum(["paragraph", "list", "table", "quote"]), text: z.string(), ordered: z.boolean(), items: z.array(z.string()), rows: z.array(z.array(z.string())), source: z.string() })) })) }), structure_map: z.object({ block_id_universais: z.array(z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"])), block_id_cumprimento_sentenca: z.array(z.enum(["titulo_executivo", "transito_julgado", "delimitacao_objeto", "demonstrativo_debito", "intimacao_pagar_multa", "medidas_executivas", "indices_atualizacao"])), base_required: z.array(z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"])), cumprimento_sentenca_required: z.array(z.enum(["titulo_executivo", "transito_julgado", "delimitacao_objeto", "demonstrativo_debito", "intimacao_pagar_multa", "medidas_executivas"])) }), meta: z.object({ documentos_usados: z.array(z.string()), template_principal: z.object({ origem: z.string(), motivo_escolha: z.string(), recorrencia_aproximada: z.enum(["alta", "media", "baixa"]) }), tese_central: z.string(), estrategia: z.string(), checklist_faltando: z.array(z.string()), placeholders_encontrados: z.array(z.string()), block_coverage: z.object({ base: z.array(z.object({ block_id: z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"]), present: z.boolean(), secao_template: z.string(), exemplo: z.string() })), cumprimento_de_sentenca: z.array(z.object({ block_id: z.enum(["titulo_executivo", "transito_julgado", "delimitacao_objeto", "demonstrativo_debito", "intimacao_pagar_multa", "medidas_executivas", "indices_atualizacao"]), present: z.boolean(), secao_template: z.string(), exemplo: z.string() })) }), observacoes_confiabilidade: z.object({ template_confiavel: z.boolean(), nivel_confiabilidade: z.enum(["alto", "medio", "baixo"]), motivo: z.string(), alertas: z.array(z.string()) }), warnings: z.array(z.string()) }) });
+const SaDaJsonPetiEsGeraisSchema = z.object({ schema_version: z.string(), doc_type: z.enum(["iniciais", "contestacao", "replica", "memoriais", "recursos", "contrarrazoes", "cumprimento_de_sentenca", "peticoes_gerais"]), doc_subtype: z.string(), doc: z.object({ title: z.string(), sections: z.array(z.object({ ordem: z.any(), titulo_literal: z.string(), blocks: z.array(z.object({ block_id: z.string(), type: z.enum(["paragraph", "list", "table", "quote"]), text: z.string(), ordered: z.boolean(), items: z.array(z.string()), rows: z.array(z.array(z.string())), source: z.string() })) })) }), structure_map: z.object({ block_id_universais: z.array(z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"])), block_id_peticoes_gerais: z.array(z.enum(["indicacao_evento", "pedido_direto_fundamento", "juntada_documentos"])), base_required: z.array(z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"])), peticoes_gerais_required: z.array(z.enum(["indicacao_evento", "pedido_direto_fundamento"])) }), meta: z.object({ documentos_usados: z.array(z.string()), template_principal: z.object({ origem: z.string(), motivo_escolha: z.string(), recorrencia_aproximada: z.enum(["alta", "media", "baixa"]) }), tese_central: z.string(), estrategia: z.string(), checklist_faltando: z.array(z.string()), placeholders_encontrados: z.array(z.string()), block_coverage: z.object({ base: z.array(z.object({ block_id: z.enum(["enderecamento", "identificacao_processo", "partes_polos", "titulo_peca", "sintese_fatica", "fundamentacao_juridica", "pedidos_finais", "provas", "fecho", "local_data_assinatura_oab"]), present: z.boolean(), secao_template: z.string(), exemplo: z.string() })), peticoes_gerais: z.array(z.object({ block_id: z.enum(["indicacao_evento", "pedido_direto_fundamento", "juntada_documentos"]), present: z.boolean(), secao_template: z.string(), exemplo: z.string() })) }), observacoes_confiabilidade: z.object({ template_confiavel: z.boolean(), nivel_confiabilidade: z.enum(["alto", "medio", "baixo"]), motivo: z.string(), alertas: z.array(z.string()) }), warnings: z.array(z.string()) }) });
 const classifyUserIntent = new Agent({
   name: "Classify User Intent",
   instructions: `Você é um classificador de intenção de um escritório de advocacia.
@@ -307,10 +97,13 @@ Proibições:
 
 Você deve retornar APENAS o JSON final.
 `,
-  model: MODEL_LIGHT,
+  model: "gpt-5-nano",
   outputType: ClassifyUserIntentSchema,
   modelSettings: {
-    maxTokens: 450,
+    reasoning: {
+      effort: "medium",
+      summary: "detailed"
+    },
     store: true
   }
 });
@@ -447,13 +240,12 @@ OU ao menos uma frase clara do tipo: \"queremos improcedência total\", \"querem
 #####################################################################
 Retorne SOMENTE o JSON válido no schema configurado para este nó.
 Nenhum texto fora do JSON.`,
-  model: MODEL_DEFAULT,
-  tools: [
-    fileSearch
-  ],
+  model: "gpt-4.1-mini",
   outputType: IntakeContestaOConversacionalSchema,
   modelSettings: {
-    maxTokens: 700,
+    temperature: 1,
+    topP: 1,
+    maxTokens: 2048,
     store: true
   }
 });
@@ -596,10 +388,12 @@ Checklist do que pedir (adaptar aos itens faltantes):
 #####################################################################
 Retorne SOMENTE o JSON válido no schema \"replica_case_pack\".
 Nada fora do JSON.`,
-  model: MODEL_DEFAULT,
+  model: "gpt-4.1-mini",
   outputType: IntakeRPlicaConversacionalSchema,
   modelSettings: {
-    maxTokens: 700,
+    temperature: 1,
+    topP: 1,
+    maxTokens: 2048,
     store: true
   }
 });
@@ -643,10 +437,12 @@ Regras finais:
 - Nunca invente categorias.
 - Nunca retorne múltiplas categorias.
 - Se estiver em dúvida, retorne \"Else\".`,
-  model: MODEL_LIGHT,
+  model: "gpt-4.1",
   outputType: AgenteClassificadorStageSchema,
   modelSettings: {
-    maxTokens: 350,
+    temperature: 0,
+    topP: 1,
+    maxTokens: 2048,
     store: true
   }
 });
@@ -677,9 +473,11 @@ Você deve perguntar exatamente qual das opções abaixo o usuário deseja:
 
 O usuário deve responder escolhendo uma dessas opções.
 `,
-  model: MODEL_DEFAULT,
+  model: "gpt-5-nano",
   modelSettings: {
-    maxTokens: 600,
+    reasoning: {
+      effort: "medium"
+    },
     store: true
   }
 });
@@ -703,14 +501,6 @@ Regras importantes:
 - Quando faltar informação, faça perguntas objetivas e práticas, como um advogado faria.
 - Se houver mais de um caminho possível, explique as opções, os riscos e quando cada uma se aplica.
 - Seja realista, técnico e honesto — nunca prometa resultados.
-- Por padrão, responda de forma curta (aprox. 150–300 palavras).
-- Só detalhe além disso se o usuário pedir explicitamente: \"quero versão completa\", \"detalhe tudo\", \"resposta completa\".
-
-Formato obrigatório da resposta curta:
-1) Resumo em 5 bullets
-2) O que prova
-3) O que não prova
-4) Próximo passo
 
 Estilo de resposta:
 - Escreva como advogado experiente explicando para outro advogado ou para o cliente.
@@ -719,9 +509,11 @@ Estilo de resposta:
 
 Objetivo principal:
 - Ajudar o usuário a decidir o próximo passo correto, não apenas responder por responder.`,
-  model: MODEL_DEFAULT,
+  model: "gpt-5-mini",
   modelSettings: {
-    maxTokens: 700,
+    reasoning: {
+      effort: "medium"
+    },
     store: true
   }
 });
@@ -783,9 +575,11 @@ Saída obrigatória em JSON:
   ]
 }
 `,
-  model: MODEL_DEFAULT,
+  model: "gpt-5-mini",
   modelSettings: {
-    maxTokens: 700,
+    reasoning: {
+      effort: "medium"
+    },
     store: true
   }
 });
@@ -940,12 +734,14 @@ Copie o conteúdo
 Utilize diretamente em uma peça
 Sem risco de erro material ou precedente falso
 `,
-  model: MODEL_DEFAULT,
+  model: "gpt-5-mini",
   tools: [
     webSearchPreview
   ],
   modelSettings: {
-    maxTokens: 700,
+    reasoning: {
+      effort: "high"
+    },
     store: true
   }
 });
@@ -974,9 +770,11 @@ Regras:
 - NÃO faça nenhuma busca.
 - Apenas oriente o usuário a explicar melhor o pedido.
 - Seja educado, claro e direto.`,
-  model: MODEL_DEFAULT,
+  model: "gpt-5-mini",
   modelSettings: {
-    maxTokens: 500,
+    reasoning: {
+      effort: "low"
+    },
     store: true
   }
 });
@@ -1044,10 +842,13 @@ QUALIDADE (FOCO EM SEMELHANÇA)
 SAÍDA
 - Retorne SOMENTE o JSON válido no schema \"iniciais_query_pack\".
 - Não escreva nada fora do JSON.`,
-  model: MODEL_DEFAULT,
+  model: "gpt-5-mini",
   outputType: IniciaisPrepararBuscaQueryPackSchema,
   modelSettings: {
-    maxTokens: 2000,
+    reasoning: {
+      effort: "high",
+      summary: "detailed"
+    },
     store: true
   }
 });
@@ -1247,10 +1048,13 @@ REGRAS ABSOLUTAS (SEM EXCEÇÃO)
 - Proibido criar nova estrutura de petição.
 - Proibido misturar modelos diferentes.
 - Se algo estiver ausente, registre como ausente + alerta + checklist.`,
-  model: MODEL_DEFAULT,
+  model: "gpt-5-mini",
   outputType: IniciaisSelecionarEExtrairTrechosSchema,
   modelSettings: {
-    maxTokens: 2000,
+    reasoning: {
+      effort: "high",
+      summary: "detailed"
+    },
     store: true
   }
 });
@@ -1342,10 +1146,13 @@ E quaisquer temas explicitamente incompatíveis com o caso do intake.
 ## SAÍDA
 Retorne APENAS um JSON válido conforme o schema \`contestacao_query_pack\`.
 Nenhum texto fora do JSON.`,
-  model: MODEL_DEFAULT,
+  model: "gpt-5-mini",
   outputType: ContestaOPrepararBuscaQueryPackSchema,
   modelSettings: {
-    maxTokens: 2000,
+    reasoning: {
+      effort: "high",
+      summary: "detailed"
+    },
     store: true
   }
 });
@@ -1596,10 +1403,13 @@ REGRAS ABSOLUTAS (SEM EXCEÇÃO)
 - Proibido misturar modelos.
 - Se algo estiver ausente, deixe \"\" e registre em checklist/alertas.
 `,
-  model: MODEL_DEFAULT,
+  model: "gpt-5-mini",
   outputType: ContestaOExtrairTemplateSchema,
   modelSettings: {
-    maxTokens: 2000,
+    reasoning: {
+      effort: "high",
+      summary: "detailed"
+    },
     store: true
   }
 });
@@ -1633,10 +1443,13 @@ Preenchimento:
 - pronto_para_busca: false se faltar o mínimo; true se já dá para preparar Query Pack.
 - mensagem_ao_usuario: só quando pronto_para_busca=false (mensagem curta pedindo as respostas).
 `,
-  model: MODEL_DEFAULT,
+  model: "gpt-5-mini",
   outputType: IntakeIniciaisSchema,
   modelSettings: {
-    maxTokens: 700,
+    reasoning: {
+      effort: "medium",
+      summary: "detailed"
+    },
     store: true
   }
 });
@@ -1762,10 +1575,12 @@ Você precisa ter (de forma explícita OU por inferência permitida):
   - pedido principal
   - urgência (sim/não)
   - provas disponíveis`,
-  model: MODEL_DEFAULT,
+  model: "gpt-4.1-mini",
   outputType: IntakeIniciaisConversationalSchema,
   modelSettings: {
-    maxTokens: 700,
+    temperature: 1,
+    topP: 1,
+    maxTokens: 2048,
     store: true
   }
 });
@@ -1775,8 +1590,6 @@ const agentColetarDadosIniciaisPerguntaNica = new Agent({
   instructions: `Você está fazendo o INTAKE de uma PETIÇÃO INICIAL (Brasil).
 
 Peça ao usuário para responder EM UMA ÚNICA MENSAGEM, copiando e preenchendo o checklist abaixo (sem explicar nada além disso).
-
-Você DEVE retornar somente o texto da pergunta/checklist, sem comentários extras, sem metainstruções, sem mencionar desenvolvedor, sistema, prompt, próxima interação ou regras internas.
 
 Pergunta ao usuário (envie exatamente assim):
 
@@ -1795,9 +1608,11 @@ Para eu preparar a petição inicial corretamente, responda de uma vez (copie e 
 
 Aguarde a resposta do usuário. Não faça mais perguntas nesta mensagem.
 `,
-  model: MODEL_DEFAULT,
+  model: "gpt-4.1",
   modelSettings: {
-    maxTokens: 700,
+    temperature: 1,
+    topP: 1,
+    maxTokens: 2048,
     store: true
   }
 });
@@ -1858,10 +1673,12 @@ Preenchimento dos campos:
 Lembre-se:
 Seu trabalho é transformar a conversa em um caso estruturado e marcar exatamente o que ainda falta.
 `,
-  model: MODEL_DEFAULT,
+  model: "gpt-5-mini",
   outputType: IntakeContestaOSchema,
   modelSettings: {
-    maxTokens: 700,
+    reasoning: {
+      effort: "medium"
+    },
     store: true
   }
 });
@@ -1909,9 +1726,11 @@ Para eu conseguir finalizar a contestação, complete de uma vez só (copie e pr
 
 Aguarde a resposta do usuário. Não faça mais perguntas nesta mensagem.
 `,
-  model: MODEL_DEFAULT,
+  model: "gpt-4.1",
   modelSettings: {
-    maxTokens: 700,
+    temperature: 1,
+    topP: 1,
+    maxTokens: 2048,
     store: true
   }
 });
@@ -1964,10 +1783,12 @@ false se faltar o mínimo (ex: não sabe o que a contestação alegou / não sab
 true se já der para preparar o Query Pack.
 mensagem_ao_usuario: só quando pronto_para_busca=false (mensagem curta pedindo as informações que faltam).
 Lembre-se: Seu trabalho é transformar a conversa em um caso estruturado e marcar exatamente o que ainda falta.`,
-  model: MODEL_DEFAULT,
+  model: "gpt-5-mini",
   outputType: IntakeRPlicaSchema,
   modelSettings: {
-    maxTokens: 700,
+    reasoning: {
+      effort: "medium"
+    },
     store: true
   }
 });
@@ -2118,10 +1939,13 @@ Exemplo de estilo aceitável:
 Retorne APENAS o JSON no schema \"replica_query_pack\".
 Nenhum texto fora do JSON.
 `,
-  model: MODEL_DEFAULT,
+  model: "gpt-5-mini",
   outputType: RPlicaPrepararBuscaQueryPackSchema,
   modelSettings: {
-    maxTokens: 2000,
+    reasoning: {
+      effort: "high",
+      summary: "detailed"
+    },
     store: true
   }
 });
@@ -2169,9 +1993,11 @@ Para eu conseguir finalizar a réplica, complete de uma vez só (copie e preench
 
 Aguarde a resposta do usuário. Não faça mais perguntas nesta mensagem.
 `,
-  model: MODEL_DEFAULT,
+  model: "gpt-4.1",
   modelSettings: {
-    maxTokens: 700,
+    temperature: 1,
+    topP: 1,
+    maxTokens: 2048,
     store: true
   }
 });
@@ -2422,10 +2248,13 @@ REGRAS ABSOLUTAS (SEM EXCEÇÃO)
 - É proibido “assumir” que blocos universais existem: você deve mapear (provar) ou marcar ausente.
 - Se algo estiver ausente, deixe \"\" e registre em checklist/alertas.
 - Você NÃO deve normalizar títulos: copie exatamente como está.`,
-  model: MODEL_DEFAULT,
+  model: "gpt-5-mini",
   outputType: RPlicaSelecionarEvidNciasSchema,
   modelSettings: {
-    maxTokens: 2000,
+    reasoning: {
+      effort: "high",
+      summary: "detailed"
+    },
     store: true
   }
 });
@@ -2580,10 +2409,12 @@ Se faltar algo, itens_faltantes deve listar bullets e você deve pedir para o us
 Retorne SOMENTE o JSON válido no schema \"memoriais_case_pack\".
 Nada fora do JSON.
 `,
-  model: MODEL_DEFAULT,
+  model: "gpt-4.1-mini",
   outputType: IntakeMemoriaisConversacionalSchema,
   modelSettings: {
-    maxTokens: 700,
+    temperature: 1,
+    topP: 1,
+    maxTokens: 2048,
     store: true
   }
 });
@@ -2659,10 +2490,12 @@ A saída DEVE ser SOMENTE o JSON no schema:
 
 memoriais_intake_pack
 `,
-  model: MODEL_DEFAULT,
+  model: "gpt-5-mini",
   outputType: IntakeMemoriaisSchema,
   modelSettings: {
-    maxTokens: 700,
+    reasoning: {
+      effort: "medium"
+    },
     store: true
   }
 });
@@ -2783,10 +2616,13 @@ Quando o File Search permitir filtro por data:
 - priorize peças dos ÚLTIMOS 3 ANOS.
 Motivo: manter aderência a entendimentos e formatação recentes sem ficar restrito demais.
 Se o volume de acervo for pequeno, ampliar para 5 anos.`,
-  model: MODEL_DEFAULT,
+  model: "gpt-5-mini",
   outputType: MemoriaisPrepararBuscaQueryPackSchema,
   modelSettings: {
-    maxTokens: 2000,
+    reasoning: {
+      effort: "high",
+      summary: "detailed"
+    },
     store: true
   }
 });
@@ -2820,9 +2656,11 @@ Pergunte EXATAMENTE no formato abaixo:
 Para eu conseguir finalizar os memoriais, complete de uma vez só (copie e preencha apenas o que falta):
 [LISTE AQUI SOMENTE OS ITENS QUE ESTÃO FALTANDO, NUMERADOS]
 Aguarde a resposta do usuário. Não faça mais perguntas nesta mensagem.`,
-  model: MODEL_DEFAULT,
+  model: "gpt-4.1",
   modelSettings: {
-    maxTokens: 700,
+    temperature: 1,
+    topP: 1,
+    maxTokens: 2048,
     store: true
   }
 });
@@ -3035,10 +2873,13 @@ REGRAS ABSOLUTAS (SEM EXCEÇÃO)
 - Não crie estrutura nova.
 - Não misture modelos.
 - Se algo estiver ausente, deixe \"\" e registre em checklist/alertas.`,
-  model: MODEL_DEFAULT,
+  model: "gpt-5-mini",
   outputType: MemoriaisSelecionarEExtrairTrechosSchema,
   modelSettings: {
-    maxTokens: 2000,
+    reasoning: {
+      effort: "high",
+      summary: "detailed"
+    },
     store: true
   }
 });
@@ -3220,10 +3061,12 @@ Se faltar algo, itens_faltantes deve listar bullets e o usuário deve ser orient
 #####################################################################
 Retorne SOMENTE o JSON válido no schema \"recurso_case_pack\".
 Nada fora do JSON.`,
-  model: MODEL_DEFAULT,
+  model: "gpt-4.1-mini",
   outputType: IntakeRecursosConversacionalSchema,
   modelSettings: {
-    maxTokens: 700,
+    temperature: 1,
+    topP: 1,
+    maxTokens: 2048,
     store: true
   }
 });
@@ -3298,10 +3141,12 @@ A saída DEVE ser SOMENTE o JSON no schema:
 
 recurso_intake_pack
 `,
-  model: MODEL_DEFAULT,
+  model: "gpt-5-mini",
   outputType: IntakeRecursosSchema,
   modelSettings: {
-    maxTokens: 700,
+    reasoning: {
+      effort: "medium"
+    },
     store: true
   }
 });
@@ -3373,10 +3218,13 @@ CONSULTA_PRONTA (STRING FINAL)
 
 SAÍDA
 - Retorne SOMENTE o JSON no schema do node (sem texto extra).`,
-  model: MODEL_DEFAULT,
+  model: "gpt-5-mini",
   outputType: RecursosPrepararBuscaQueryPackSchema,
   modelSettings: {
-    maxTokens: 2000,
+    reasoning: {
+      effort: "high",
+      summary: "detailed"
+    },
     store: true
   }
 });
@@ -3425,9 +3273,11 @@ Para eu conseguir preparar o recurso, complete de uma vez só (copie e preencha 
 Aguarde a resposta do usuário.  
 Não faça mais perguntas nesta mensagem.
 `,
-  model: MODEL_DEFAULT,
+  model: "gpt-4.1",
   modelSettings: {
-    maxTokens: 700,
+    temperature: 1,
+    topP: 1,
+    maxTokens: 2048,
     store: true
   }
 });
@@ -3673,10 +3523,13 @@ REGRAS ABSOLUTAS (SEM EXCEÇÃO)
 - Não parafraseie: trechos extraídos devem ser literais.
 - Não crie estrutura nova.
 - Se algo estiver ausente, deixe \"\" e registre em checklist/alertas.`,
-  model: MODEL_DEFAULT,
+  model: "gpt-5-mini",
   outputType: RecursosSelecionarEvidNciasSchema,
   modelSettings: {
-    maxTokens: 2000,
+    reasoning: {
+      effort: "high",
+      summary: "detailed"
+    },
     store: true
   }
 });
@@ -3866,10 +3719,12 @@ Se faltar algo, itens_faltantes deve orientar o usuário a responder tudo de uma
 #####################################################################
 Retorne SOMENTE o JSON válido no schema \"contrarrazoes_case_pack\".
 Nada fora do JSON.`,
-  model: MODEL_DEFAULT,
+  model: "gpt-4.1-mini",
   outputType: IntakeContrarrazEsConversacionalSchema,
   modelSettings: {
-    maxTokens: 700,
+    temperature: 1,
+    topP: 1,
+    maxTokens: 2048,
     store: true
   }
 });
@@ -3948,10 +3803,12 @@ PREENCHIMENTO DOS CAMPOS:
 LEMBRE-SE:
 Seu trabalho é transformar a conversa em um caso estruturado e marcar exatamente o que ainda falta.
 `,
-  model: MODEL_DEFAULT,
+  model: "gpt-5-mini",
   outputType: IntakeContrarrazEsSchema,
   modelSettings: {
-    maxTokens: 700,
+    reasoning: {
+      effort: "medium"
+    },
     store: true
   }
 });
@@ -4042,10 +3899,13 @@ Retorne **somente** um JSON válido no schema do node, preenchendo:
 - \`consulta_pronta\`
 
 Sem texto fora do JSON.`,
-  model: MODEL_DEFAULT,
+  model: "gpt-5-mini",
   outputType: ContrarrazEsPrepararBuscaQueryPackSchema,
   modelSettings: {
-    maxTokens: 2000,
+    reasoning: {
+      effort: "high",
+      summary: "detailed"
+    },
     store: true
   }
 });
@@ -4095,9 +3955,11 @@ Para eu conseguir preparar as contrarrazões, complete de uma vez só (copie e p
 Aguarde a resposta do usuário.  
 Não faça mais perguntas nesta mensagem.
 `,
-  model: MODEL_DEFAULT,
+  model: "gpt-4.1",
   modelSettings: {
-    maxTokens: 700,
+    temperature: 1,
+    topP: 1,
+    maxTokens: 2048,
     store: true
   }
 });
@@ -4300,10 +4162,13 @@ Entregue APENAS:
 - pronto para revisão humana.
 
 Nada mais.`,
-  model: MODEL_DEFAULT,
+  model: "gpt-5-mini",
   outputType: ContrarrazEsSelecionarEvidNciasSchema,
   modelSettings: {
-    maxTokens: 2000,
+    reasoning: {
+      effort: "high",
+      summary: "detailed"
+    },
     store: true
   }
 });
@@ -4456,10 +4321,12 @@ Se intake_completo=\"nao\", itens_faltantes deve solicitar que o usuário respon
 #####################################################################
 Retorne SOMENTE o JSON válido no schema \"cumprimento_sentenca_case_pack\".
 Nada fora do JSON.`,
-  model: MODEL_DEFAULT,
+  model: "gpt-4.1-mini",
   outputType: IntakeCumprimentoDeSentenAConversacionalSchema,
   modelSettings: {
-    maxTokens: 700,
+    temperature: 1,
+    topP: 1,
+    maxTokens: 2048,
     store: true
   }
 });
@@ -4537,10 +4404,12 @@ A saída DEVE ser SOMENTE o JSON no schema:
 
 cumprimento_sentenca_intake_pack
 `,
-  model: MODEL_DEFAULT,
+  model: "gpt-5-mini",
   outputType: IntakeCumprimentoDeSentenASchema,
   modelSettings: {
-    maxTokens: 700,
+    reasoning: {
+      effort: "medium"
+    },
     store: true
   }
 });
@@ -4661,10 +4530,13 @@ NÃO invente NB, DER, DIB, RMI ou números de processo.
 Retorne apenas o JSON do schema do node, preenchendo com o máximo de especificidade permitido pelo intake e mantendo campos vazios quando não houver base.
 
 `,
-  model: MODEL_DEFAULT,
+  model: "gpt-5-mini",
   outputType: CumprimentoDeSentenAPrepararBuscaQueryPackSchema,
   modelSettings: {
-    maxTokens: 2000,
+    reasoning: {
+      effort: "high",
+      summary: "detailed"
+    },
     store: true
   }
 });
@@ -4711,9 +4583,11 @@ Para eu conseguir preparar o cumprimento de sentença, complete de uma vez só (
 Aguarde a resposta do usuário.  
 Não faça mais perguntas nesta mensagem.
 `,
-  model: MODEL_DEFAULT,
+  model: "gpt-4.1",
   modelSettings: {
-    maxTokens: 700,
+    temperature: 1,
+    topP: 1,
+    maxTokens: 2048,
     store: true
   }
 });
@@ -4872,10 +4746,13 @@ FORMATO DA RESPOSTA (OBRIGATÓRIO)
 ============================================================
 Retorne APENAS o JSON no schema \"cumprimento_sentenca_selected_material\".
 Não responda em texto livre.`,
-  model: MODEL_DEFAULT,
+  model: "gpt-5-mini",
   outputType: CumprimentoDeSentenASelecionarEvidNciasSchema,
   modelSettings: {
-    maxTokens: 2000,
+    reasoning: {
+      effort: "high",
+      summary: "detailed"
+    },
     store: true
   }
 });
@@ -5023,10 +4900,12 @@ Se intake_completo=\"nao\", itens_faltantes deve pedir que o usuário responda d
 #####################################################################
 Retorne SOMENTE o JSON válido no schema \"peticao_geral_case_pack\".
 Nada fora do JSON.`,
-  model: MODEL_DEFAULT,
+  model: "gpt-4.1-mini",
   outputType: IntakePetiEsGeraisConversacionalSchema,
   modelSettings: {
-    maxTokens: 700,
+    temperature: 1,
+    topP: 1,
+    maxTokens: 2048,
     store: true
   }
 });
@@ -5106,10 +4985,12 @@ LEMBRE-SE:
 Seu trabalho é transformar a conversa em um caso estruturado de PETIÇÃO GERAL e marcar exatamente o que ainda falta.
 
 Você NÃO escreve a petição. Você apenas prepara o caso para busca e redação.`,
-  model: MODEL_DEFAULT,
+  model: "gpt-5-mini",
   outputType: IntakePetiEsGeraisSchema,
   modelSettings: {
-    maxTokens: 700,
+    reasoning: {
+      effort: "medium"
+    },
     store: true
   }
 });
@@ -5252,10 +5133,13 @@ CUMPRIMENTOS DE SENTENÇA quase idênticos ao caso atual, priorizando:
 
 # SAÍDA FINAL
 Retorne APENAS um JSON válido conforme o schema \"cumprimento_sentenca_query_pack\".`,
-  model: MODEL_DEFAULT,
+  model: "gpt-5-mini",
   outputType: PetiEsGeraisPrepararBuscaQueryPackSchema,
   modelSettings: {
-    maxTokens: 2000,
+    reasoning: {
+      effort: "medium",
+      summary: "detailed"
+    },
     store: true
   }
 });
@@ -5301,9 +5185,11 @@ Para eu conseguir preparar a petição, complete de uma vez só (copie e preench
 
 Aguarde a resposta do usuário.
 Não faça mais perguntas nesta mensagem.`,
-  model: MODEL_DEFAULT,
+  model: "gpt-4.1",
   modelSettings: {
-    maxTokens: 700,
+    temperature: 1,
+    topP: 1,
+    maxTokens: 2048,
     store: true
   }
 });
@@ -5434,10 +5320,13 @@ SAÍDA FINAL
 ============================================================
 Retorne APENAS o JSON estritamente válido conforme o schema \"peticoes_gerais_selected_material\".
 `,
-  model: MODEL_DEFAULT,
+  model: "gpt-5-mini",
   outputType: PetiEsGeraisSelecionarEvidNciasSchema,
   modelSettings: {
-    maxTokens: 2000,
+    reasoning: {
+      effort: "high",
+      summary: "detailed"
+    },
     store: true
   }
 });
@@ -5726,10 +5615,13 @@ meta.warnings:
 #####################################################################
 Retorne APENAS um JSON válido no schema response_schema.
 Nenhum texto fora do JSON.`,
-  model: MODEL_FINAL_JSON,
+  model: "gpt-5.1",
   outputType: SaDaJsonIniciaisSchema,
   modelSettings: {
-    maxTokens: 6000,
+    reasoning: {
+      effort: "medium",
+      summary: "detailed"
+    },
     store: true
   }
 });
@@ -6012,10 +5904,13 @@ meta.warnings:
 #####################################################################
 Retorne APENAS um JSON válido no schema response_schema.
 Nenhum texto fora do JSON.`,
-  model: MODEL_FINAL_JSON,
+  model: "gpt-5.1",
   outputType: SaDaJsonContestaOSchema,
   modelSettings: {
-    maxTokens: 6000,
+    reasoning: {
+      effort: "medium",
+      summary: "detailed"
+    },
     store: true
   }
 });
@@ -6233,10 +6128,13 @@ Regras:
 #####################################################################
 Retorne APENAS um JSON válido e estritamente compatível com o schema response_schema.
 Nenhum texto fora do JSON.`,
-  model: MODEL_FINAL_JSON,
+  model: "gpt-5.1",
   outputType: SaDaJsonRPlicaSchema,
   modelSettings: {
-    maxTokens: 6000,
+    reasoning: {
+      effort: "medium",
+      summary: "detailed"
+    },
     store: true
   }
 });
@@ -6454,10 +6352,13 @@ Regras:
 #####################################################################
 Retorne APENAS um JSON válido e estritamente compatível com o schema response_schema.
 Nenhum texto fora do JSON.`,
-  model: MODEL_FINAL_JSON,
+  model: "gpt-5.1",
   outputType: SaDaJsonMemoriaisSchema,
   modelSettings: {
-    maxTokens: 6000,
+    reasoning: {
+      effort: "medium",
+      summary: "detailed"
+    },
     store: true
   }
 });
@@ -6683,10 +6584,13 @@ Regras:
 #####################################################################
 Retorne APENAS um JSON válido e estritamente compatível com o schema response_schema.
 Nenhum texto fora do JSON.`,
-  model: MODEL_FINAL_JSON,
+  model: "gpt-5.1",
   outputType: SaDaJsonRecursosSchema,
   modelSettings: {
-    maxTokens: 6000,
+    reasoning: {
+      effort: "medium",
+      summary: "detailed"
+    },
     store: true
   }
 });
@@ -6913,10 +6817,13 @@ Regras:
 #####################################################################
 Retorne APENAS um JSON válido e estritamente compatível com o schema response_schema.
 Nenhum texto fora do JSON.`,
-  model: MODEL_FINAL_JSON,
+  model: "gpt-5.1",
   outputType: SaDaJsonContrarrazEsSchema,
   modelSettings: {
-    maxTokens: 6000,
+    reasoning: {
+      effort: "medium",
+      summary: "detailed"
+    },
     store: true
   }
 });
@@ -7145,10 +7052,13 @@ Regras:
 #####################################################################
 Retorne APENAS um JSON válido e estritamente compatível com o schema response_schema.
 Nenhum texto fora do JSON.`,
-  model: MODEL_FINAL_JSON,
+  model: "gpt-5.1",
   outputType: SaDaJsonCumprimentoDeSentenASchema,
   modelSettings: {
-    maxTokens: 6000,
+    reasoning: {
+      effort: "medium",
+      summary: "detailed"
+    },
     store: true
   }
 });
@@ -7378,1283 +7288,1047 @@ Regras:
 #####################################################################
 Retorne APENAS um JSON válido e estritamente compatível com o schema response_schema.
 Nenhum texto fora do JSON.`,
-  model: MODEL_FINAL_JSON,
+  model: "gpt-5.1",
   outputType: SaDaJsonPetiEsGeraisSchema,
   modelSettings: {
-    maxTokens: 6000,
+    reasoning: {
+      effort: "medium"
+    },
     store: true
   }
 });
 
-type WorkflowAttachment = {
-  attachment_id: string;
-  file_id: string;
-  filename: string;
-  mime_type: string;
-  size_bytes: number;
-};
-
-type WorkflowInput = {
-  input_as_text: string;
-  chat_id?: string;
-  attachments?: WorkflowAttachment[];
-};
-
-type WorkflowStatusCallback = (phase: string, message: string) => void;
-type RunWorkflowOptions = {
-  onStatus?: WorkflowStatusCallback;
-};
+type WorkflowInput = { input_as_text: string };
 
 
 // Main code entrypoint
-export const runWorkflow = async (workflow: WorkflowInput, options?: RunWorkflowOptions) => {
+export const runWorkflow = async (workflow: WorkflowInput) => {
   return await withTrace("Fabio Agent", async () => {
     const state = {
 
     };
-    const userContent: AgentInputItem[] = [];
-    const messageContent: Array<{ type: "input_text"; text: string } | { type: "input_file"; file: { id: string } }> = [
-      { type: "input_text", text: workflow.input_as_text }
+    const conversationHistory: AgentInputItem[] = [
+      { role: "user", content: [{ type: "input_text", text: workflow.input_as_text }] }
     ];
-
-    if (Array.isArray(workflow.attachments) && workflow.attachments.length > 0) {
-      messageContent.push(
-        ...workflow.attachments.map((attachment) => ({
-          type: "input_file" as const,
-          file: { id: attachment.file_id }
-        }))
-      );
-
-      userContent.push({
-        role: "system",
-        content:
-          "Anexos disponíveis nesta conversa (use quando relevante):\n" +
-          JSON.stringify(
-            workflow.attachments.map((attachment) => ({
-              attachment_id: attachment.attachment_id,
-              file_id: attachment.file_id,
-              filename: attachment.filename,
-              mime_type: attachment.mime_type,
-              size_bytes: attachment.size_bytes
-            })),
-            null,
-            2
-          ) +
-          "\nRegra: só inclua bloco de mídia no JSON final se o usuário pedir explicitamente para incluir imagem/arquivo no resultado."
+    const runner = new Runner({
+      traceMetadata: {
+        __trace_source__: "agent-builder",
+        workflow_id: "wf_697147dea01c8190be93c53b8e96c71a0761ebadd0470529"
+      }
+    });
+    const runFileSearch = async (vectorStoreId: string, query: string) => {
+      const data = (await client.vectorStores.search(vectorStoreId, {
+        query: query || "",
+        max_num_results: 20
+      })).data;
+      return data.map((result: any) => {
+        const contentParts = Array.isArray(result?.content) ? result.content : [];
+        const textPreview = contentParts
+          .map((part: any) => {
+            if (typeof part === "string") return part;
+            if (typeof part?.text === "string") return part.text;
+            if (typeof part?.content === "string") return part.content;
+            if (typeof part?.value === "string") return part.value;
+            return "";
+          })
+          .filter(Boolean)
+          .join("\n")
+          .slice(0, 3000);
+        return {
+          id: result.file_id,
+          filename: result.filename,
+          score: result.score,
+          attributes: result.attributes ?? {},
+          text_preview: textPreview
+        };
       });
+    };
+    const classifyUserIntentResultTemp = await runner.run(
+      classifyUserIntent,
+      [
+        ...conversationHistory
+      ]
+    );
+    conversationHistory.push(...classifyUserIntentResultTemp.newItems.map((item) => item.rawItem));
+
+    if (!classifyUserIntentResultTemp.finalOutput) {
+        throw new Error("Agent result is undefined");
     }
 
-    userContent.push({ role: "user", content: messageContent });
-    const conversationHistory: AgentInputItem[] = [...userContent];
-    const extractText = (value: any): string => {
-      if (typeof value === "string") return value;
-      if (Array.isArray(value)) return value.map(extractText).filter(Boolean).join("\n");
-      if (!value || typeof value !== "object") return "";
-      if (value.type === "reasoning") return "";
-      if (typeof value.text === "string") return value.text;
-      if (typeof value.output_text === "string") return value.output_text;
-      if (typeof value.content === "string") return value.content;
-      if (typeof value.value === "string") return value.value;
-      if (Array.isArray(value.content)) return extractText(value.content);
-      if (Array.isArray(value.summary)) return extractText(value.summary);
-      return "";
+    const classifyUserIntentResult = {
+      output_text: JSON.stringify(classifyUserIntentResultTemp.finalOutput),
+      output_parsed: classifyUserIntentResultTemp.finalOutput
     };
-    const sanitizeHistoryItem = (item: any): any | null => {
-      if (!item || typeof item !== "object") return null;
-      if (item.type === "reasoning") return null;
-
-      const role = item.role;
-      if (role === "system" || role === "assistant") {
-        const text = extractText(item.content).trim();
-        if (!text) return null;
-        return { role, content: text };
-      }
-
-      if (role === "user") {
-        if (typeof item.content === "string") return { role: "user", content: item.content };
-        if (Array.isArray(item.content)) {
-          const parts = item.content
-            .map((part: any) => {
-              if (!part || typeof part !== "object") return null;
-              if (part.type === "reasoning") return null;
-              if (part.type === "input_file" && typeof part?.file?.id === "string") {
-                return { type: "input_file" as const, file: { id: part.file.id } };
-              }
-              if (part.type === "input_text" && typeof part.text === "string") {
-                return { type: "input_text" as const, text: part.text };
-              }
-              const text = extractText(part).trim();
-              if (!text) return null;
-              return { type: "input_text" as const, text };
-            })
-            .filter(Boolean);
-          if (parts.length === 0) return null;
-          return { role: "user", content: parts };
-        }
-        const text = extractText(item.content).trim();
-        if (!text) return null;
-        return { role: "user", content: text };
-      }
-
-      if (item.type === "message" && (item.role === "user" || item.role === "assistant" || item.role === "system")) {
-        return sanitizeHistoryItem({ role: item.role, content: item.content });
-      }
-
-      return null;
-    };
-    const sanitizeHistoryItems = (items: any[]): any[] => {
-      if (!Array.isArray(items)) return [];
-      return items.map(sanitizeHistoryItem).filter(Boolean);
-    };
-    const appendNewItemsToHistory = (newItems: any[]) => {
-      const rawItems = Array.isArray(newItems) ? newItems.map((item) => item?.rawItem).filter(Boolean) : [];
-      conversationHistory.push(...sanitizeHistoryItems(rawItems));
-    };
-    const runnerTraceMetadata = {
-      __trace_source__: "agent-builder",
-      workflow_id: "wf_697147dea01c8190be93c53b8e96c71a0761ebadd0470529"
-    } as const;
-    let lastFinalOutput: any = undefined;
-    const emitStatus: WorkflowStatusCallback = options?.onStatus ?? (() => {});
-    const toPhase = (name: string) =>
-      name
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "_")
-        .replace(/^_+|_+$/g, "")
-        .slice(0, 64);
-    const run = async (...args: any[]) => {
-      const agentName = args?.[0]?.name ?? "workflow_step";
-      emitStatus(toPhase(String(agentName)), `Executando: ${agentName}`);
-      if (Array.isArray(conversationHistory)) {
-        const cleaned = sanitizeHistoryItems(conversationHistory);
-        conversationHistory.length = 0;
-        conversationHistory.push(...cleaned);
-      }
-      // Responses API can emit transient "reasoning" items that must not be replayed as input.
-      // If replayed, later calls may fail with:
-      // "Item '<id>' of type 'reasoning' was provided without its required following item."
-      if (Array.isArray(args?.[1])) {
-        args[1] = sanitizeHistoryItems(args[1]);
-      }
-      // Create a fresh Runner per node execution to avoid carrying transient
-      // previous_response state (which can include internal reasoning items).
-      const runner = new Runner({ traceMetadata: runnerTraceMetadata });
-      const res = await (runner.run as any)(...args);
-      if (res && res.finalOutput !== undefined) {
-        lastFinalOutput = res.finalOutput;
-      }
-      return res;
-    };
-    const guardrailsInputText = workflow.input_as_text;
-    emitStatus("guardrails", "Executando validações de segurança");
-    const { hasTripwire: guardrailsHasTripwire, safeText: guardrailsAnonymizedText, failOutput: guardrailsFailOutput, passOutput: guardrailsPassOutput } = await runAndApplyGuardrails(guardrailsInputText, guardrailsConfig, conversationHistory, workflow);
-    const guardrailsOutput = (guardrailsHasTripwire ? guardrailsFailOutput : guardrailsPassOutput);
-    if (guardrailsHasTripwire) {
-      return guardrailsOutput;
-    } else {
-      if (shouldUseFastQuestionPath(workflow.input_as_text)) {
-        emitStatus("fast_question_path", "Pergunta curta detectada: resposta direta");
-        const perguntaGeralSResponderResultTemp = await run(
-          perguntaGeralSResponder,
-          [
-            ...conversationHistory
-          ]
-        );
-        appendNewItemsToHistory(perguntaGeralSResponderResultTemp.newItems);
-        if (!perguntaGeralSResponderResultTemp.finalOutput) {
-          throw new Error("Agent result is undefined");
-        }
-        const perguntaGeralSResponderResult = {
-          output_text: perguntaGeralSResponderResultTemp.finalOutput ?? ""
-        };
-      } else {
-      const classifyUserIntentResultTemp = await run(
-        classifyUserIntent,
+    if (classifyUserIntentResult.output_parsed.intent == "criar_novo") {
+      const agenteClassificadorStageResultTemp = await runner.run(
+        agenteClassificadorStage,
         [
           ...conversationHistory
         ]
       );
-      appendNewItemsToHistory(classifyUserIntentResultTemp.newItems);
+      conversationHistory.push(...agenteClassificadorStageResultTemp.newItems.map((item) => item.rawItem));
 
-      if (!classifyUserIntentResultTemp.finalOutput) {
+      if (!agenteClassificadorStageResultTemp.finalOutput) {
           throw new Error("Agent result is undefined");
       }
 
-      const classifyUserIntentResult = {
-        output_text: JSON.stringify(classifyUserIntentResultTemp.finalOutput),
-        output_parsed: classifyUserIntentResultTemp.finalOutput
+      const agenteClassificadorStageResult = {
+        output_text: JSON.stringify(agenteClassificadorStageResultTemp.finalOutput),
+        output_parsed: agenteClassificadorStageResultTemp.finalOutput
       };
-      if (classifyUserIntentResult.output_parsed.intent == "criar_novo") {
-        const agenteClassificadorStageResultTemp = await run(
-          agenteClassificadorStage,
+      if (agenteClassificadorStageResult.output_parsed.category == "Iniciais") {
+        const intakeIniciaisConversationalResultTemp = await runner.run(
+          intakeIniciaisConversational,
           [
             ...conversationHistory
           ]
         );
-        appendNewItemsToHistory(agenteClassificadorStageResultTemp.newItems);
+        conversationHistory.push(...intakeIniciaisConversationalResultTemp.newItems.map((item) => item.rawItem));
 
-        if (!agenteClassificadorStageResultTemp.finalOutput) {
+        if (!intakeIniciaisConversationalResultTemp.finalOutput) {
             throw new Error("Agent result is undefined");
         }
 
-        const agenteClassificadorStageResult = {
-          output_text: JSON.stringify(agenteClassificadorStageResultTemp.finalOutput),
-          output_parsed: agenteClassificadorStageResultTemp.finalOutput
+        const intakeIniciaisConversationalResult = {
+          output_text: JSON.stringify(intakeIniciaisConversationalResultTemp.finalOutput),
+          output_parsed: intakeIniciaisConversationalResultTemp.finalOutput
         };
-        if (agenteClassificadorStageResult.output_parsed.category == "Iniciais") {
-          const intakeIniciaisConversationalResultTemp = await run(
-            intakeIniciaisConversational,
+        if (intakeIniciaisConversationalResult.output_parsed.intake_completo == "sim") {
+          const intakeIniciaisResultTemp = await runner.run(
+            intakeIniciais,
             [
               ...conversationHistory
             ]
           );
-          appendNewItemsToHistory(intakeIniciaisConversationalResultTemp.newItems);
+          conversationHistory.push(...intakeIniciaisResultTemp.newItems.map((item) => item.rawItem));
 
-          if (!intakeIniciaisConversationalResultTemp.finalOutput) {
+          if (!intakeIniciaisResultTemp.finalOutput) {
               throw new Error("Agent result is undefined");
           }
 
-          const intakeIniciaisConversationalResult = {
-            output_text: JSON.stringify(intakeIniciaisConversationalResultTemp.finalOutput),
-            output_parsed: intakeIniciaisConversationalResultTemp.finalOutput
+          const intakeIniciaisResult = {
+            output_text: JSON.stringify(intakeIniciaisResultTemp.finalOutput),
+            output_parsed: intakeIniciaisResultTemp.finalOutput
           };
-          if (intakeIniciaisConversationalResult.output_parsed.intake_completo == "sim") {
-            const intakeIniciaisResultTemp = await run(
-              intakeIniciais,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(intakeIniciaisResultTemp.newItems);
-
-            if (!intakeIniciaisResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const intakeIniciaisResult = {
-              output_text: JSON.stringify(intakeIniciaisResultTemp.finalOutput),
-              output_parsed: intakeIniciaisResultTemp.finalOutput
-            };
-
-            conversationHistory.push({
-              role: "system",
-              content:
-                "DADOS VINCULANTES DO CASO (use estes dados como verdade do caso atual):\n" +
-                JSON.stringify(intakeIniciaisResult.output_parsed, null, 2) +
-                "\n\nREGRAS OBRIGATÓRIAS:\n" +
-                "- NÃO reutilizar nomes, números de processo, foro, datas, valores ou fatos dos templates.\n" +
-                "- Usar templates e file search apenas para estilo, estrutura, ordem de seções e padrão argumentativo.\n" +
-                "- Quando houver conflito entre template e dados do caso, sempre prevalecem os dados do caso.\n" +
-                "- Se algum campo do caso não foi informado, usar placeholder explícito [PREENCHER]."
-            });
-            const iniciaisPrepararBuscaQueryPackResultTemp = await run(
-              iniciaisPrepararBuscaQueryPack,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(iniciaisPrepararBuscaQueryPackResultTemp.newItems);
-
-            if (!iniciaisPrepararBuscaQueryPackResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const iniciaisPrepararBuscaQueryPackResult = {
-              output_text: JSON.stringify(iniciaisPrepararBuscaQueryPackResultTemp.finalOutput),
-              output_parsed: iniciaisPrepararBuscaQueryPackResultTemp.finalOutput
-            };
-            const vectorSearchRaw = (await client.vectorStores.search("vs_697142e9fef08191855b1ab1e548eb8a", {query: iniciaisPrepararBuscaQueryPackResult.output_parsed.consulta_pronta,
-            max_num_results: 20})).data;
-            const filesearchResult = normalizeVectorSearchResults(vectorSearchRaw);
-            conversationHistory.push({
-              role: "system",
-              content:
-                "File search results (usar APENAS como referência de estilo/estrutura e trechos argumentativos adaptáveis):\n" +
-                JSON.stringify(filesearchResult, null, 2) +
-                "\nNunca copiar fatos específicos do caso-modelo."
-            });
-            const iniciaisSelecionarEExtrairTrechosResultTemp = await run(
-              iniciaisSelecionarEExtrairTrechos,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(iniciaisSelecionarEExtrairTrechosResultTemp.newItems);
-
-            if (!iniciaisSelecionarEExtrairTrechosResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const iniciaisSelecionarEExtrairTrechosResult = {
-              output_text: JSON.stringify(iniciaisSelecionarEExtrairTrechosResultTemp.finalOutput),
-              output_parsed: iniciaisSelecionarEExtrairTrechosResultTemp.finalOutput
-            };
-            const saDaJsonIniciaisResultTemp = await run(
-              saDaJsonIniciais,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(saDaJsonIniciaisResultTemp.newItems);
-
-            if (!saDaJsonIniciaisResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const saDaJsonIniciaisResult = {
-              output_text: JSON.stringify(saDaJsonIniciaisResultTemp.finalOutput),
-              output_parsed: saDaJsonIniciaisResultTemp.finalOutput
-            };
-          } else {
-            const agentColetarDadosIniciaisPerguntaNicaResultTemp = await run(
-              agentColetarDadosIniciaisPerguntaNica,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(agentColetarDadosIniciaisPerguntaNicaResultTemp.newItems);
-
-            if (!agentColetarDadosIniciaisPerguntaNicaResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const agentColetarDadosIniciaisPerguntaNicaResult = {
-              output_text: agentColetarDadosIniciaisPerguntaNicaResultTemp.finalOutput ?? ""
-            };
-          }
-        } else if (agenteClassificadorStageResult.output_parsed.category == "Contestacao") {
-          const intakeContestaOConversacionalResultTemp = await run(
-            intakeContestaOConversacional,
+          const iniciaisPrepararBuscaQueryPackResultTemp = await runner.run(
+            iniciaisPrepararBuscaQueryPack,
             [
               ...conversationHistory
             ]
           );
-          appendNewItemsToHistory(intakeContestaOConversacionalResultTemp.newItems);
+          conversationHistory.push(...iniciaisPrepararBuscaQueryPackResultTemp.newItems.map((item) => item.rawItem));
 
-          if (!intakeContestaOConversacionalResultTemp.finalOutput) {
+          if (!iniciaisPrepararBuscaQueryPackResultTemp.finalOutput) {
               throw new Error("Agent result is undefined");
           }
 
-          const intakeContestaOConversacionalResult = {
-            output_text: JSON.stringify(intakeContestaOConversacionalResultTemp.finalOutput),
-            output_parsed: intakeContestaOConversacionalResultTemp.finalOutput
+          const iniciaisPrepararBuscaQueryPackResult = {
+            output_text: JSON.stringify(iniciaisPrepararBuscaQueryPackResultTemp.finalOutput),
+            output_parsed: iniciaisPrepararBuscaQueryPackResultTemp.finalOutput
           };
-          if (intakeContestaOConversacionalResult.output_parsed.intake_completo == "sim") {
-            const intakeContestaOResultTemp = await run(
-              intakeContestaO,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(intakeContestaOResultTemp.newItems);
-
-            if (!intakeContestaOResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const intakeContestaOResult = {
-              output_text: JSON.stringify(intakeContestaOResultTemp.finalOutput),
-              output_parsed: intakeContestaOResultTemp.finalOutput
-            };
-            conversationHistory.push({
-              role: "system",
-              content:
-                "DADOS VINCULANTES DO CASO (use estes dados como verdade do caso atual):\n" +
-                JSON.stringify(intakeContestaOResult.output_parsed, null, 2) +
-                "\n\nREGRAS OBRIGATÓRIAS:\n" +
-                "- NÃO reutilizar nomes, números de processo, foro, datas, valores ou fatos dos templates.\n" +
-                "- Usar templates e file search apenas para estilo, estrutura, ordem de seções e padrão argumentativo.\n" +
-                "- Quando houver conflito entre template e dados do caso, sempre prevalecem os dados do caso.\n" +
-                "- Se algum campo do caso não foi informado, usar placeholder explícito [PREENCHER]."
-            });
-            const contestaOPrepararBuscaQueryPackResultTemp = await run(
-              contestaOPrepararBuscaQueryPack,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(contestaOPrepararBuscaQueryPackResultTemp.newItems);
-
-            if (!contestaOPrepararBuscaQueryPackResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const contestaOPrepararBuscaQueryPackResult = {
-              output_text: JSON.stringify(contestaOPrepararBuscaQueryPackResultTemp.finalOutput),
-              output_parsed: contestaOPrepararBuscaQueryPackResultTemp.finalOutput
-            };
-            const vectorSearchRaw = (await client.vectorStores.search("vs_69710dd50f088191a6d68298cda18ff7", {query: contestaOPrepararBuscaQueryPackResult.output_parsed.consulta_pronta,
-            max_num_results: 20})).data;
-            const filesearchResult = normalizeVectorSearchResults(vectorSearchRaw);
-            conversationHistory.push({
-              role: "system",
-              content:
-                "File search results (usar APENAS como referência de estilo/estrutura e trechos argumentativos adaptáveis):\n" +
-                JSON.stringify(filesearchResult, null, 2) +
-                "\nNunca copiar fatos específicos do caso-modelo."
-            });
-            const contestaOExtrairTemplateResultTemp = await run(
-              contestaOExtrairTemplate,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(contestaOExtrairTemplateResultTemp.newItems);
-
-            if (!contestaOExtrairTemplateResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const contestaOExtrairTemplateResult = {
-              output_text: JSON.stringify(contestaOExtrairTemplateResultTemp.finalOutput),
-              output_parsed: contestaOExtrairTemplateResultTemp.finalOutput
-            };
-            const saDaJsonContestaOResultTemp = await run(
-              saDaJsonContestaO,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(saDaJsonContestaOResultTemp.newItems);
-
-            if (!saDaJsonContestaOResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const saDaJsonContestaOResult = {
-              output_text: JSON.stringify(saDaJsonContestaOResultTemp.finalOutput),
-              output_parsed: saDaJsonContestaOResultTemp.finalOutput
-            };
-          } else {
-            const agentColetarDadosContestaOPerguntaNicaResultTemp = await run(
-              agentColetarDadosContestaOPerguntaNica,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(agentColetarDadosContestaOPerguntaNicaResultTemp.newItems);
-
-            if (!agentColetarDadosContestaOPerguntaNicaResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const agentColetarDadosContestaOPerguntaNicaResult = {
-              output_text: agentColetarDadosContestaOPerguntaNicaResultTemp.finalOutput ?? ""
-            };
-          }
-        } else if (agenteClassificadorStageResult.output_parsed.category == "Replica") {
-          const intakeRPlicaConversacionalResultTemp = await run(
-            intakeRPlicaConversacional,
+          const filesearchResult = await runFileSearch(
+            "vs_697142e9fef08191855b1ab1e548eb8a",
+            iniciaisPrepararBuscaQueryPackResult.output_parsed.consulta_pronta
+          );
+          conversationHistory.push({
+            role: "system",
+            content:
+              "RESULTADOS_FILE_SEARCH (iniciais):\n" +
+              JSON.stringify(filesearchResult, null, 2)
+          });
+          const iniciaisSelecionarEExtrairTrechosResultTemp = await runner.run(
+            iniciaisSelecionarEExtrairTrechos,
             [
               ...conversationHistory
             ]
           );
-          appendNewItemsToHistory(intakeRPlicaConversacionalResultTemp.newItems);
+          conversationHistory.push(...iniciaisSelecionarEExtrairTrechosResultTemp.newItems.map((item) => item.rawItem));
 
-          if (!intakeRPlicaConversacionalResultTemp.finalOutput) {
+          if (!iniciaisSelecionarEExtrairTrechosResultTemp.finalOutput) {
               throw new Error("Agent result is undefined");
           }
 
-          const intakeRPlicaConversacionalResult = {
-            output_text: JSON.stringify(intakeRPlicaConversacionalResultTemp.finalOutput),
-            output_parsed: intakeRPlicaConversacionalResultTemp.finalOutput
+          const iniciaisSelecionarEExtrairTrechosResult = {
+            output_text: JSON.stringify(iniciaisSelecionarEExtrairTrechosResultTemp.finalOutput),
+            output_parsed: iniciaisSelecionarEExtrairTrechosResultTemp.finalOutput
           };
-          if (intakeRPlicaConversacionalResult.output_parsed.intake_completo == "sim") {
-            const intakeRPlicaResultTemp = await run(
-              intakeRPlica,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(intakeRPlicaResultTemp.newItems);
-
-            if (!intakeRPlicaResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const intakeRPlicaResult = {
-              output_text: JSON.stringify(intakeRPlicaResultTemp.finalOutput),
-              output_parsed: intakeRPlicaResultTemp.finalOutput
-            };
-
-            conversationHistory.push({
-              role: "system",
-              content:
-                "DADOS VINCULANTES DO CASO (use estes dados como verdade do caso atual):\n" +
-                JSON.stringify(intakeRPlicaResult.output_parsed, null, 2) +
-                "\n\nREGRAS OBRIGATÓRIAS:\n" +
-                "- NÃO reutilizar nomes, números de processo, foro, datas, valores ou fatos dos templates.\n" +
-                "- Usar templates e file search apenas para estilo, estrutura, ordem de seções e padrão argumentativo.\n" +
-                "- Quando houver conflito entre template e dados do caso, sempre prevalecem os dados do caso.\n" +
-                "- Se algum campo do caso não foi informado, usar placeholder explícito [PREENCHER]."
-            });
-            const rPlicaPrepararBuscaQueryPackResultTemp = await run(
-              rPlicaPrepararBuscaQueryPack,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(rPlicaPrepararBuscaQueryPackResultTemp.newItems);
-
-            if (!rPlicaPrepararBuscaQueryPackResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const rPlicaPrepararBuscaQueryPackResult = {
-              output_text: JSON.stringify(rPlicaPrepararBuscaQueryPackResultTemp.finalOutput),
-              output_parsed: rPlicaPrepararBuscaQueryPackResultTemp.finalOutput
-            };
-            const vectorSearchRaw = (await client.vectorStores.search("vs_69711e8bee9c81919a906590740b1494", {query: rPlicaPrepararBuscaQueryPackResult.output_parsed.consulta_pronta,
-            max_num_results: 20})).data;
-            const filesearchResult = normalizeVectorSearchResults(vectorSearchRaw);
-            conversationHistory.push({
-              role: "system",
-              content:
-                "File search results (usar APENAS como referência de estilo/estrutura e trechos argumentativos adaptáveis):\n" +
-                JSON.stringify(filesearchResult, null, 2) +
-                "\nNunca copiar fatos específicos do caso-modelo."
-            });
-            const rPlicaSelecionarEvidNciasResultTemp = await run(
-              rPlicaSelecionarEvidNcias,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(rPlicaSelecionarEvidNciasResultTemp.newItems);
-
-            if (!rPlicaSelecionarEvidNciasResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const rPlicaSelecionarEvidNciasResult = {
-              output_text: JSON.stringify(rPlicaSelecionarEvidNciasResultTemp.finalOutput),
-              output_parsed: rPlicaSelecionarEvidNciasResultTemp.finalOutput
-            };
-            const saDaJsonRPlicaResultTemp = await run(
-              saDaJsonRPlica,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(saDaJsonRPlicaResultTemp.newItems);
-
-            if (!saDaJsonRPlicaResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const saDaJsonRPlicaResult = {
-              output_text: JSON.stringify(saDaJsonRPlicaResultTemp.finalOutput),
-              output_parsed: saDaJsonRPlicaResultTemp.finalOutput
-            };
-          } else {
-            const agentColetarDadosRPlicaPerguntaNicaResultTemp = await run(
-              agentColetarDadosRPlicaPerguntaNica,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(agentColetarDadosRPlicaPerguntaNicaResultTemp.newItems);
-
-            if (!agentColetarDadosRPlicaPerguntaNicaResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const agentColetarDadosRPlicaPerguntaNicaResult = {
-              output_text: agentColetarDadosRPlicaPerguntaNicaResultTemp.finalOutput ?? ""
-            };
-          }
-        } else if (agenteClassificadorStageResult.output_parsed.category == "Memoriais") {
-          const intakeMemoriaisConversacionalResultTemp = await run(
-            intakeMemoriaisConversacional,
+          const saDaJsonIniciaisResultTemp = await runner.run(
+            saDaJsonIniciais,
             [
               ...conversationHistory
             ]
           );
-          appendNewItemsToHistory(intakeMemoriaisConversacionalResultTemp.newItems);
+          conversationHistory.push(...saDaJsonIniciaisResultTemp.newItems.map((item) => item.rawItem));
 
-          if (!intakeMemoriaisConversacionalResultTemp.finalOutput) {
+          if (!saDaJsonIniciaisResultTemp.finalOutput) {
               throw new Error("Agent result is undefined");
           }
 
-          const intakeMemoriaisConversacionalResult = {
-            output_text: JSON.stringify(intakeMemoriaisConversacionalResultTemp.finalOutput),
-            output_parsed: intakeMemoriaisConversacionalResultTemp.finalOutput
+          const saDaJsonIniciaisResult = {
+            output_text: JSON.stringify(saDaJsonIniciaisResultTemp.finalOutput),
+            output_parsed: saDaJsonIniciaisResultTemp.finalOutput
           };
-          if (intakeMemoriaisConversacionalResult.output_parsed.intake_completo == "sim") {
-            const intakeMemoriaisResultTemp = await run(
-              intakeMemoriais,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(intakeMemoriaisResultTemp.newItems);
-
-            if (!intakeMemoriaisResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const intakeMemoriaisResult = {
-              output_text: JSON.stringify(intakeMemoriaisResultTemp.finalOutput),
-              output_parsed: intakeMemoriaisResultTemp.finalOutput
-            };
-
-            conversationHistory.push({
-              role: "system",
-              content:
-                "DADOS VINCULANTES DO CASO (use estes dados como verdade do caso atual):\n" +
-                JSON.stringify(intakeMemoriaisResult.output_parsed, null, 2) +
-                "\n\nREGRAS OBRIGATÓRIAS:\n" +
-                "- NÃO reutilizar nomes, números de processo, foro, datas, valores ou fatos dos templates.\n" +
-                "- Usar templates e file search apenas para estilo, estrutura, ordem de seções e padrão argumentativo.\n" +
-                "- Quando houver conflito entre template e dados do caso, sempre prevalecem os dados do caso.\n" +
-                "- Se algum campo do caso não foi informado, usar placeholder explícito [PREENCHER]."
-            });
-            const memoriaisPrepararBuscaQueryPackResultTemp = await run(
-              memoriaisPrepararBuscaQueryPack,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(memoriaisPrepararBuscaQueryPackResultTemp.newItems);
-
-            if (!memoriaisPrepararBuscaQueryPackResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const memoriaisPrepararBuscaQueryPackResult = {
-              output_text: JSON.stringify(memoriaisPrepararBuscaQueryPackResultTemp.finalOutput),
-              output_parsed: memoriaisPrepararBuscaQueryPackResultTemp.finalOutput
-            };
-            const vectorSearchRaw = (await client.vectorStores.search("vs_69718130d25c8191b15e4317a3e0447a", {query: memoriaisPrepararBuscaQueryPackResult.output_parsed.consulta_pronta,
-            max_num_results: 20})).data;
-            const filesearchResult = normalizeVectorSearchResults(vectorSearchRaw);
-            conversationHistory.push({
-              role: "system",
-              content:
-                "File search results (usar APENAS como referência de estilo/estrutura e trechos argumentativos adaptáveis):\n" +
-                JSON.stringify(filesearchResult, null, 2) +
-                "\nNunca copiar fatos específicos do caso-modelo."
-            });
-            const memoriaisSelecionarEExtrairTrechosResultTemp = await run(
-              memoriaisSelecionarEExtrairTrechos,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(memoriaisSelecionarEExtrairTrechosResultTemp.newItems);
-
-            if (!memoriaisSelecionarEExtrairTrechosResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const memoriaisSelecionarEExtrairTrechosResult = {
-              output_text: JSON.stringify(memoriaisSelecionarEExtrairTrechosResultTemp.finalOutput),
-              output_parsed: memoriaisSelecionarEExtrairTrechosResultTemp.finalOutput
-            };
-            const saDaJsonMemoriaisResultTemp = await run(
-              saDaJsonMemoriais,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(saDaJsonMemoriaisResultTemp.newItems);
-
-            if (!saDaJsonMemoriaisResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const saDaJsonMemoriaisResult = {
-              output_text: JSON.stringify(saDaJsonMemoriaisResultTemp.finalOutput),
-              output_parsed: saDaJsonMemoriaisResultTemp.finalOutput
-            };
-          } else {
-            const agentColetarDadosMemoriaisPerguntaNicaResultTemp = await run(
-              agentColetarDadosMemoriaisPerguntaNica,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(agentColetarDadosMemoriaisPerguntaNicaResultTemp.newItems);
-
-            if (!agentColetarDadosMemoriaisPerguntaNicaResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const agentColetarDadosMemoriaisPerguntaNicaResult = {
-              output_text: agentColetarDadosMemoriaisPerguntaNicaResultTemp.finalOutput ?? ""
-            };
-          }
-        } else if (agenteClassificadorStageResult.output_parsed.category == "Recursos") {
-          const intakeRecursosConversacionalResultTemp = await run(
-            intakeRecursosConversacional,
-            [
-              ...conversationHistory
-            ]
-          );
-          appendNewItemsToHistory(intakeRecursosConversacionalResultTemp.newItems);
-
-          if (!intakeRecursosConversacionalResultTemp.finalOutput) {
-              throw new Error("Agent result is undefined");
-          }
-
-          const intakeRecursosConversacionalResult = {
-            output_text: JSON.stringify(intakeRecursosConversacionalResultTemp.finalOutput),
-            output_parsed: intakeRecursosConversacionalResultTemp.finalOutput
-          };
-          if (intakeRecursosConversacionalResult.output_parsed.intake_completo == "sim") {
-            const intakeRecursosResultTemp = await run(
-              intakeRecursos,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(intakeRecursosResultTemp.newItems);
-
-            if (!intakeRecursosResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const intakeRecursosResult = {
-              output_text: JSON.stringify(intakeRecursosResultTemp.finalOutput),
-              output_parsed: intakeRecursosResultTemp.finalOutput
-            };
-
-            conversationHistory.push({
-              role: "system",
-              content:
-                "DADOS VINCULANTES DO CASO (use estes dados como verdade do caso atual):\n" +
-                JSON.stringify(intakeRecursosResult.output_parsed, null, 2) +
-                "\n\nREGRAS OBRIGATÓRIAS:\n" +
-                "- NÃO reutilizar nomes, números de processo, foro, datas, valores ou fatos dos templates.\n" +
-                "- Usar templates e file search apenas para estilo, estrutura, ordem de seções e padrão argumentativo.\n" +
-                "- Quando houver conflito entre template e dados do caso, sempre prevalecem os dados do caso.\n" +
-                "- Se algum campo do caso não foi informado, usar placeholder explícito [PREENCHER]."
-            });
-            const recursosPrepararBuscaQueryPackResultTemp = await run(
-              recursosPrepararBuscaQueryPack,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(recursosPrepararBuscaQueryPackResultTemp.newItems);
-
-            if (!recursosPrepararBuscaQueryPackResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const recursosPrepararBuscaQueryPackResult = {
-              output_text: JSON.stringify(recursosPrepararBuscaQueryPackResultTemp.finalOutput),
-              output_parsed: recursosPrepararBuscaQueryPackResultTemp.finalOutput
-            };
-            const vectorSearchRaw = (await client.vectorStores.search("vs_697128383c948191ae4731db3b8cf8cf", {query: recursosPrepararBuscaQueryPackResult.output_parsed.consulta_pronta,
-            max_num_results: 20})).data;
-            const filesearchResult = normalizeVectorSearchResults(vectorSearchRaw);
-            conversationHistory.push({
-              role: "system",
-              content:
-                "File search results (usar APENAS como referência de estilo/estrutura e trechos argumentativos adaptáveis):\n" +
-                JSON.stringify(filesearchResult, null, 2) +
-                "\nNunca copiar fatos específicos do caso-modelo."
-            });
-            const recursosSelecionarEvidNciasResultTemp = await run(
-              recursosSelecionarEvidNcias,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(recursosSelecionarEvidNciasResultTemp.newItems);
-
-            if (!recursosSelecionarEvidNciasResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const recursosSelecionarEvidNciasResult = {
-              output_text: JSON.stringify(recursosSelecionarEvidNciasResultTemp.finalOutput),
-              output_parsed: recursosSelecionarEvidNciasResultTemp.finalOutput
-            };
-            const saDaJsonRecursosResultTemp = await run(
-              saDaJsonRecursos,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(saDaJsonRecursosResultTemp.newItems);
-
-            if (!saDaJsonRecursosResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const saDaJsonRecursosResult = {
-              output_text: JSON.stringify(saDaJsonRecursosResultTemp.finalOutput),
-              output_parsed: saDaJsonRecursosResultTemp.finalOutput
-            };
-          } else {
-            const agentColetarDadosRecursosPerguntaNicaResultTemp = await run(
-              agentColetarDadosRecursosPerguntaNica,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(agentColetarDadosRecursosPerguntaNicaResultTemp.newItems);
-
-            if (!agentColetarDadosRecursosPerguntaNicaResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const agentColetarDadosRecursosPerguntaNicaResult = {
-              output_text: agentColetarDadosRecursosPerguntaNicaResultTemp.finalOutput ?? ""
-            };
-          }
-        } else if (agenteClassificadorStageResult.output_parsed.category == "Contrarrazoes") {
-          const intakeContrarrazEsConversacionalResultTemp = await run(
-            intakeContrarrazEsConversacional,
-            [
-              ...conversationHistory
-            ]
-          );
-          appendNewItemsToHistory(intakeContrarrazEsConversacionalResultTemp.newItems);
-
-          if (!intakeContrarrazEsConversacionalResultTemp.finalOutput) {
-              throw new Error("Agent result is undefined");
-          }
-
-          const intakeContrarrazEsConversacionalResult = {
-            output_text: JSON.stringify(intakeContrarrazEsConversacionalResultTemp.finalOutput),
-            output_parsed: intakeContrarrazEsConversacionalResultTemp.finalOutput
-          };
-          if (intakeContrarrazEsConversacionalResult.output_parsed.intake_completo == "sim") {
-            const intakeContrarrazEsResultTemp = await run(
-              intakeContrarrazEs,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(intakeContrarrazEsResultTemp.newItems);
-
-            if (!intakeContrarrazEsResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const intakeContrarrazEsResult = {
-              output_text: JSON.stringify(intakeContrarrazEsResultTemp.finalOutput),
-              output_parsed: intakeContrarrazEsResultTemp.finalOutput
-            };
-
-            conversationHistory.push({
-              role: "system",
-              content:
-                "DADOS VINCULANTES DO CASO (use estes dados como verdade do caso atual):\n" +
-                JSON.stringify(intakeContrarrazEsResult.output_parsed, null, 2) +
-                "\n\nREGRAS OBRIGATÓRIAS:\n" +
-                "- NÃO reutilizar nomes, números de processo, foro, datas, valores ou fatos dos templates.\n" +
-                "- Usar templates e file search apenas para estilo, estrutura, ordem de seções e padrão argumentativo.\n" +
-                "- Quando houver conflito entre template e dados do caso, sempre prevalecem os dados do caso.\n" +
-                "- Se algum campo do caso não foi informado, usar placeholder explícito [PREENCHER]."
-            });
-            const contrarrazEsPrepararBuscaQueryPackResultTemp = await run(
-              contrarrazEsPrepararBuscaQueryPack,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(contrarrazEsPrepararBuscaQueryPackResultTemp.newItems);
-
-            if (!contrarrazEsPrepararBuscaQueryPackResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const contrarrazEsPrepararBuscaQueryPackResult = {
-              output_text: JSON.stringify(contrarrazEsPrepararBuscaQueryPackResultTemp.finalOutput),
-              output_parsed: contrarrazEsPrepararBuscaQueryPackResultTemp.finalOutput
-            };
-            const vectorSearchRaw = (await client.vectorStores.search("vs_69713067d3648191944078f1c0103dd1", {query: contrarrazEsPrepararBuscaQueryPackResult.output_parsed.consulta_pronta,
-            max_num_results: 20})).data;
-            const filesearchResult = normalizeVectorSearchResults(vectorSearchRaw);
-            conversationHistory.push({
-              role: "system",
-              content:
-                "File search results (usar APENAS como referência de estilo/estrutura e trechos argumentativos adaptáveis):\n" +
-                JSON.stringify(filesearchResult, null, 2) +
-                "\nNunca copiar fatos específicos do caso-modelo."
-            });
-            const contrarrazEsSelecionarEvidNciasResultTemp = await run(
-              contrarrazEsSelecionarEvidNcias,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(contrarrazEsSelecionarEvidNciasResultTemp.newItems);
-
-            if (!contrarrazEsSelecionarEvidNciasResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const contrarrazEsSelecionarEvidNciasResult = {
-              output_text: JSON.stringify(contrarrazEsSelecionarEvidNciasResultTemp.finalOutput),
-              output_parsed: contrarrazEsSelecionarEvidNciasResultTemp.finalOutput
-            };
-            const saDaJsonContrarrazEsResultTemp = await run(
-              saDaJsonContrarrazEs,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(saDaJsonContrarrazEsResultTemp.newItems);
-
-            if (!saDaJsonContrarrazEsResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const saDaJsonContrarrazEsResult = {
-              output_text: JSON.stringify(saDaJsonContrarrazEsResultTemp.finalOutput),
-              output_parsed: saDaJsonContrarrazEsResultTemp.finalOutput
-            };
-          } else {
-            const agentColetarDadosContrarrazEsPerguntaNicaResultTemp = await run(
-              agentColetarDadosContrarrazEsPerguntaNica,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(agentColetarDadosContrarrazEsPerguntaNicaResultTemp.newItems);
-
-            if (!agentColetarDadosContrarrazEsPerguntaNicaResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const agentColetarDadosContrarrazEsPerguntaNicaResult = {
-              output_text: agentColetarDadosContrarrazEsPerguntaNicaResultTemp.finalOutput ?? ""
-            };
-          }
-        } else if (agenteClassificadorStageResult.output_parsed.category == "Cumprimento de Sentenca") {
-          const intakeCumprimentoDeSentenAConversacionalResultTemp = await run(
-            intakeCumprimentoDeSentenAConversacional,
-            [
-              ...conversationHistory
-            ]
-          );
-          appendNewItemsToHistory(intakeCumprimentoDeSentenAConversacionalResultTemp.newItems);
-
-          if (!intakeCumprimentoDeSentenAConversacionalResultTemp.finalOutput) {
-              throw new Error("Agent result is undefined");
-          }
-
-          const intakeCumprimentoDeSentenAConversacionalResult = {
-            output_text: JSON.stringify(intakeCumprimentoDeSentenAConversacionalResultTemp.finalOutput),
-            output_parsed: intakeCumprimentoDeSentenAConversacionalResultTemp.finalOutput
-          };
-          if (intakeCumprimentoDeSentenAConversacionalResult.output_parsed.intake_completo == "sim") {
-            const intakeCumprimentoDeSentenAResultTemp = await run(
-              intakeCumprimentoDeSentenA,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(intakeCumprimentoDeSentenAResultTemp.newItems);
-
-            if (!intakeCumprimentoDeSentenAResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const intakeCumprimentoDeSentenAResult = {
-              output_text: JSON.stringify(intakeCumprimentoDeSentenAResultTemp.finalOutput),
-              output_parsed: intakeCumprimentoDeSentenAResultTemp.finalOutput
-            };
-
-            conversationHistory.push({
-              role: "system",
-              content:
-                "DADOS VINCULANTES DO CASO (use estes dados como verdade do caso atual):\n" +
-                JSON.stringify(intakeCumprimentoDeSentenAResult.output_parsed, null, 2) +
-                "\n\nREGRAS OBRIGATÓRIAS:\n" +
-                "- NÃO reutilizar nomes, números de processo, foro, datas, valores ou fatos dos templates.\n" +
-                "- Usar templates e file search apenas para estilo, estrutura, ordem de seções e padrão argumentativo.\n" +
-                "- Quando houver conflito entre template e dados do caso, sempre prevalecem os dados do caso.\n" +
-                "- Se algum campo do caso não foi informado, usar placeholder explícito [PREENCHER]."
-            });
-            const cumprimentoDeSentenAPrepararBuscaQueryPackResultTemp = await run(
-              cumprimentoDeSentenAPrepararBuscaQueryPack,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(cumprimentoDeSentenAPrepararBuscaQueryPackResultTemp.newItems);
-
-            if (!cumprimentoDeSentenAPrepararBuscaQueryPackResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const cumprimentoDeSentenAPrepararBuscaQueryPackResult = {
-              output_text: JSON.stringify(cumprimentoDeSentenAPrepararBuscaQueryPackResultTemp.finalOutput),
-              output_parsed: cumprimentoDeSentenAPrepararBuscaQueryPackResultTemp.finalOutput
-            };
-            const vectorSearchRaw = (await client.vectorStores.search("vs_69713a6681f481919c00eee7d69026d1", {query: cumprimentoDeSentenAPrepararBuscaQueryPackResult.output_parsed.consulta_pronta,
-            max_num_results: 20})).data;
-            const filesearchResult = normalizeVectorSearchResults(vectorSearchRaw);
-            conversationHistory.push({
-              role: "system",
-              content:
-                "File search results (usar APENAS como referência de estilo/estrutura e trechos argumentativos adaptáveis):\n" +
-                JSON.stringify(filesearchResult, null, 2) +
-                "\nNunca copiar fatos específicos do caso-modelo."
-            });
-            const cumprimentoDeSentenASelecionarEvidNciasResultTemp = await run(
-              cumprimentoDeSentenASelecionarEvidNcias,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(cumprimentoDeSentenASelecionarEvidNciasResultTemp.newItems);
-
-            if (!cumprimentoDeSentenASelecionarEvidNciasResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const cumprimentoDeSentenASelecionarEvidNciasResult = {
-              output_text: JSON.stringify(cumprimentoDeSentenASelecionarEvidNciasResultTemp.finalOutput),
-              output_parsed: cumprimentoDeSentenASelecionarEvidNciasResultTemp.finalOutput
-            };
-            const saDaJsonCumprimentoDeSentenAResultTemp = await run(
-              saDaJsonCumprimentoDeSentenA,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(saDaJsonCumprimentoDeSentenAResultTemp.newItems);
-
-            if (!saDaJsonCumprimentoDeSentenAResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const saDaJsonCumprimentoDeSentenAResult = {
-              output_text: JSON.stringify(saDaJsonCumprimentoDeSentenAResultTemp.finalOutput),
-              output_parsed: saDaJsonCumprimentoDeSentenAResultTemp.finalOutput
-            };
-          } else {
-            const agentColetarDadosCumprimentoDeSentenAPerguntaNicaResultTemp = await run(
-              agentColetarDadosCumprimentoDeSentenAPerguntaNica,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(agentColetarDadosCumprimentoDeSentenAPerguntaNicaResultTemp.newItems);
-
-            if (!agentColetarDadosCumprimentoDeSentenAPerguntaNicaResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const agentColetarDadosCumprimentoDeSentenAPerguntaNicaResult = {
-              output_text: agentColetarDadosCumprimentoDeSentenAPerguntaNicaResultTemp.finalOutput ?? ""
-            };
-          }
-        } else if (agenteClassificadorStageResult.output_parsed.category == "Peticoes Gerais") {
-          const intakePetiEsGeraisConversacionalResultTemp = await run(
-            intakePetiEsGeraisConversacional,
-            [
-              ...conversationHistory
-            ]
-          );
-          appendNewItemsToHistory(intakePetiEsGeraisConversacionalResultTemp.newItems);
-
-          if (!intakePetiEsGeraisConversacionalResultTemp.finalOutput) {
-              throw new Error("Agent result is undefined");
-          }
-
-          const intakePetiEsGeraisConversacionalResult = {
-            output_text: JSON.stringify(intakePetiEsGeraisConversacionalResultTemp.finalOutput),
-            output_parsed: intakePetiEsGeraisConversacionalResultTemp.finalOutput
-          };
-          if (intakePetiEsGeraisConversacionalResult.output_parsed.intake_completo == "sim") {
-            const intakePetiEsGeraisResultTemp = await run(
-              intakePetiEsGerais,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(intakePetiEsGeraisResultTemp.newItems);
-
-            if (!intakePetiEsGeraisResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const intakePetiEsGeraisResult = {
-              output_text: JSON.stringify(intakePetiEsGeraisResultTemp.finalOutput),
-              output_parsed: intakePetiEsGeraisResultTemp.finalOutput
-            };
-
-            conversationHistory.push({
-              role: "system",
-              content:
-                "DADOS VINCULANTES DO CASO (use estes dados como verdade do caso atual):\n" +
-                JSON.stringify(intakePetiEsGeraisResult.output_parsed, null, 2) +
-                "\n\nREGRAS OBRIGATÓRIAS:\n" +
-                "- NÃO reutilizar nomes, números de processo, foro, datas, valores ou fatos dos templates.\n" +
-                "- Usar templates e file search apenas para estilo, estrutura, ordem de seções e padrão argumentativo.\n" +
-                "- Quando houver conflito entre template e dados do caso, sempre prevalecem os dados do caso.\n" +
-                "- Se algum campo do caso não foi informado, usar placeholder explícito [PREENCHER]."
-            });
-            const petiEsGeraisPrepararBuscaQueryPackResultTemp = await run(
-              petiEsGeraisPrepararBuscaQueryPack,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(petiEsGeraisPrepararBuscaQueryPackResultTemp.newItems);
-
-            if (!petiEsGeraisPrepararBuscaQueryPackResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const petiEsGeraisPrepararBuscaQueryPackResult = {
-              output_text: JSON.stringify(petiEsGeraisPrepararBuscaQueryPackResultTemp.finalOutput),
-              output_parsed: petiEsGeraisPrepararBuscaQueryPackResultTemp.finalOutput
-            };
-            const vectorSearchRaw = (await client.vectorStores.search("vs_69718200f9148191b85c707e239aa367", {query: petiEsGeraisPrepararBuscaQueryPackResult.output_parsed.consulta_pronta,
-            max_num_results: 20})).data;
-            const filesearchResult = normalizeVectorSearchResults(vectorSearchRaw);
-            conversationHistory.push({
-              role: "system",
-              content:
-                "File search results (usar APENAS como referência de estilo/estrutura e trechos argumentativos adaptáveis):\n" +
-                JSON.stringify(filesearchResult, null, 2) +
-                "\nNunca copiar fatos específicos do caso-modelo."
-            });
-            const petiEsGeraisSelecionarEvidNciasResultTemp = await run(
-              petiEsGeraisSelecionarEvidNcias,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(petiEsGeraisSelecionarEvidNciasResultTemp.newItems);
-
-            if (!petiEsGeraisSelecionarEvidNciasResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const petiEsGeraisSelecionarEvidNciasResult = {
-              output_text: JSON.stringify(petiEsGeraisSelecionarEvidNciasResultTemp.finalOutput),
-              output_parsed: petiEsGeraisSelecionarEvidNciasResultTemp.finalOutput
-            };
-            const saDaJsonPetiEsGeraisResultTemp = await run(
-              saDaJsonPetiEsGerais,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(saDaJsonPetiEsGeraisResultTemp.newItems);
-
-            if (!saDaJsonPetiEsGeraisResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const saDaJsonPetiEsGeraisResult = {
-              output_text: JSON.stringify(saDaJsonPetiEsGeraisResultTemp.finalOutput),
-              output_parsed: saDaJsonPetiEsGeraisResultTemp.finalOutput
-            };
-          } else {
-            const agentColetarDadosPetiEsGeraisPerguntaNicaResultTemp = await run(
-              agentColetarDadosPetiEsGeraisPerguntaNica,
-              [
-                ...conversationHistory
-              ]
-            );
-            appendNewItemsToHistory(agentColetarDadosPetiEsGeraisPerguntaNicaResultTemp.newItems);
-
-            if (!agentColetarDadosPetiEsGeraisPerguntaNicaResultTemp.finalOutput) {
-                throw new Error("Agent result is undefined");
-            }
-
-            const agentColetarDadosPetiEsGeraisPerguntaNicaResult = {
-              output_text: agentColetarDadosPetiEsGeraisPerguntaNicaResultTemp.finalOutput ?? ""
-            };
-          }
         } else {
-          const agentElseResultTemp = await run(
-            agentElse,
+          const agentColetarDadosIniciaisPerguntaNicaResultTemp = await runner.run(
+            agentColetarDadosIniciaisPerguntaNica,
             [
               ...conversationHistory
             ]
           );
-          appendNewItemsToHistory(agentElseResultTemp.newItems);
+          conversationHistory.push(...agentColetarDadosIniciaisPerguntaNicaResultTemp.newItems.map((item) => item.rawItem));
 
-          if (!agentElseResultTemp.finalOutput) {
+          if (!agentColetarDadosIniciaisPerguntaNicaResultTemp.finalOutput) {
               throw new Error("Agent result is undefined");
           }
 
-          const agentElseResult = {
-            output_text: agentElseResultTemp.finalOutput ?? ""
+          const agentColetarDadosIniciaisPerguntaNicaResult = {
+            output_text: agentColetarDadosIniciaisPerguntaNicaResultTemp.finalOutput ?? ""
           };
         }
-      } else if (classifyUserIntentResult.output_parsed.intent == "revisar_existente") {
-        const intakeRevisarAlgoExistenteResultTemp = await run(
-          intakeRevisarAlgoExistente,
+      } else if (agenteClassificadorStageResult.output_parsed.category == "Contestacao") {
+        const intakeContestaOConversacionalResultTemp = await runner.run(
+          intakeContestaOConversacional,
           [
             ...conversationHistory
           ]
         );
-        appendNewItemsToHistory(intakeRevisarAlgoExistenteResultTemp.newItems);
+        conversationHistory.push(...intakeContestaOConversacionalResultTemp.newItems.map((item) => item.rawItem));
 
-        if (!intakeRevisarAlgoExistenteResultTemp.finalOutput) {
+        if (!intakeContestaOConversacionalResultTemp.finalOutput) {
             throw new Error("Agent result is undefined");
         }
 
-        const intakeRevisarAlgoExistenteResult = {
-          output_text: intakeRevisarAlgoExistenteResultTemp.finalOutput ?? ""
+        const intakeContestaOConversacionalResult = {
+          output_text: JSON.stringify(intakeContestaOConversacionalResultTemp.finalOutput),
+          output_parsed: intakeContestaOConversacionalResultTemp.finalOutput
         };
-      } else if (classifyUserIntentResult.output_parsed.intent == "pesquisar_jurisprudencia") {
-        const intakePesquisarJurisprudNciaResultTemp = await run(
-          intakePesquisarJurisprudNcia,
+        if (intakeContestaOConversacionalResult.output_parsed.intake_completo == "sim") {
+          const intakeContestaOResultTemp = await runner.run(
+            intakeContestaO,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...intakeContestaOResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!intakeContestaOResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const intakeContestaOResult = {
+            output_text: JSON.stringify(intakeContestaOResultTemp.finalOutput),
+            output_parsed: intakeContestaOResultTemp.finalOutput
+          };
+          const contestaOPrepararBuscaQueryPackResultTemp = await runner.run(
+            contestaOPrepararBuscaQueryPack,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...contestaOPrepararBuscaQueryPackResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!contestaOPrepararBuscaQueryPackResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const contestaOPrepararBuscaQueryPackResult = {
+            output_text: JSON.stringify(contestaOPrepararBuscaQueryPackResultTemp.finalOutput),
+            output_parsed: contestaOPrepararBuscaQueryPackResultTemp.finalOutput
+          };
+          const filesearchResult = await runFileSearch(
+            "vs_69710dd50f088191a6d68298cda18ff7",
+            contestaOPrepararBuscaQueryPackResult.output_parsed.consulta_pronta
+          );
+          conversationHistory.push({
+            role: "system",
+            content:
+              "RESULTADOS_FILE_SEARCH (contestacao):\n" +
+              JSON.stringify(filesearchResult, null, 2)
+          });
+          const contestaOExtrairTemplateResultTemp = await runner.run(
+            contestaOExtrairTemplate,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...contestaOExtrairTemplateResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!contestaOExtrairTemplateResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const contestaOExtrairTemplateResult = {
+            output_text: JSON.stringify(contestaOExtrairTemplateResultTemp.finalOutput),
+            output_parsed: contestaOExtrairTemplateResultTemp.finalOutput
+          };
+          const saDaJsonContestaOResultTemp = await runner.run(
+            saDaJsonContestaO,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...saDaJsonContestaOResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!saDaJsonContestaOResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const saDaJsonContestaOResult = {
+            output_text: JSON.stringify(saDaJsonContestaOResultTemp.finalOutput),
+            output_parsed: saDaJsonContestaOResultTemp.finalOutput
+          };
+        } else {
+          const agentColetarDadosContestaOPerguntaNicaResultTemp = await runner.run(
+            agentColetarDadosContestaOPerguntaNica,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...agentColetarDadosContestaOPerguntaNicaResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!agentColetarDadosContestaOPerguntaNicaResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const agentColetarDadosContestaOPerguntaNicaResult = {
+            output_text: agentColetarDadosContestaOPerguntaNicaResultTemp.finalOutput ?? ""
+          };
+        }
+      } else if (agenteClassificadorStageResult.output_parsed.category == "Replica") {
+        const intakeRPlicaConversacionalResultTemp = await runner.run(
+          intakeRPlicaConversacional,
           [
             ...conversationHistory
           ]
         );
-        appendNewItemsToHistory(intakePesquisarJurisprudNciaResultTemp.newItems);
+        conversationHistory.push(...intakeRPlicaConversacionalResultTemp.newItems.map((item) => item.rawItem));
 
-        if (!intakePesquisarJurisprudNciaResultTemp.finalOutput) {
+        if (!intakeRPlicaConversacionalResultTemp.finalOutput) {
             throw new Error("Agent result is undefined");
         }
 
-        const intakePesquisarJurisprudNciaResult = {
-          output_text: intakePesquisarJurisprudNciaResultTemp.finalOutput ?? ""
+        const intakeRPlicaConversacionalResult = {
+          output_text: JSON.stringify(intakeRPlicaConversacionalResultTemp.finalOutput),
+          output_parsed: intakeRPlicaConversacionalResultTemp.finalOutput
         };
-      } else if (classifyUserIntentResult.output_parsed.intent == "duvida_aberta") {
-        const perguntaGeralSResponderResultTemp = await run(
-          perguntaGeralSResponder,
+        if (intakeRPlicaConversacionalResult.output_parsed.intake_completo == "sim") {
+          const intakeRPlicaResultTemp = await runner.run(
+            intakeRPlica,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...intakeRPlicaResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!intakeRPlicaResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const intakeRPlicaResult = {
+            output_text: JSON.stringify(intakeRPlicaResultTemp.finalOutput),
+            output_parsed: intakeRPlicaResultTemp.finalOutput
+          };
+          const rPlicaPrepararBuscaQueryPackResultTemp = await runner.run(
+            rPlicaPrepararBuscaQueryPack,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...rPlicaPrepararBuscaQueryPackResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!rPlicaPrepararBuscaQueryPackResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const rPlicaPrepararBuscaQueryPackResult = {
+            output_text: JSON.stringify(rPlicaPrepararBuscaQueryPackResultTemp.finalOutput),
+            output_parsed: rPlicaPrepararBuscaQueryPackResultTemp.finalOutput
+          };
+          const filesearchResult = await runFileSearch(
+            "vs_69711e8bee9c81919a906590740b1494",
+            rPlicaPrepararBuscaQueryPackResult.output_parsed.consulta_pronta
+          );
+          conversationHistory.push({
+            role: "system",
+            content:
+              "RESULTADOS_FILE_SEARCH (replica):\n" +
+              JSON.stringify(filesearchResult, null, 2)
+          });
+          const rPlicaSelecionarEvidNciasResultTemp = await runner.run(
+            rPlicaSelecionarEvidNcias,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...rPlicaSelecionarEvidNciasResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!rPlicaSelecionarEvidNciasResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const rPlicaSelecionarEvidNciasResult = {
+            output_text: JSON.stringify(rPlicaSelecionarEvidNciasResultTemp.finalOutput),
+            output_parsed: rPlicaSelecionarEvidNciasResultTemp.finalOutput
+          };
+          const saDaJsonRPlicaResultTemp = await runner.run(
+            saDaJsonRPlica,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...saDaJsonRPlicaResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!saDaJsonRPlicaResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const saDaJsonRPlicaResult = {
+            output_text: JSON.stringify(saDaJsonRPlicaResultTemp.finalOutput),
+            output_parsed: saDaJsonRPlicaResultTemp.finalOutput
+          };
+        } else {
+          const agentColetarDadosRPlicaPerguntaNicaResultTemp = await runner.run(
+            agentColetarDadosRPlicaPerguntaNica,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...agentColetarDadosRPlicaPerguntaNicaResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!agentColetarDadosRPlicaPerguntaNicaResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const agentColetarDadosRPlicaPerguntaNicaResult = {
+            output_text: agentColetarDadosRPlicaPerguntaNicaResultTemp.finalOutput ?? ""
+          };
+        }
+      } else if (agenteClassificadorStageResult.output_parsed.category == "Memoriais") {
+        const intakeMemoriaisConversacionalResultTemp = await runner.run(
+          intakeMemoriaisConversacional,
           [
             ...conversationHistory
           ]
         );
-        appendNewItemsToHistory(perguntaGeralSResponderResultTemp.newItems);
+        conversationHistory.push(...intakeMemoriaisConversacionalResultTemp.newItems.map((item) => item.rawItem));
 
-        if (!perguntaGeralSResponderResultTemp.finalOutput) {
+        if (!intakeMemoriaisConversacionalResultTemp.finalOutput) {
             throw new Error("Agent result is undefined");
         }
 
-        const perguntaGeralSResponderResult = {
-          output_text: perguntaGeralSResponderResultTemp.finalOutput ?? ""
+        const intakeMemoriaisConversacionalResult = {
+          output_text: JSON.stringify(intakeMemoriaisConversacionalResultTemp.finalOutput),
+          output_parsed: intakeMemoriaisConversacionalResultTemp.finalOutput
         };
+        if (intakeMemoriaisConversacionalResult.output_parsed.intake_completo == "sim") {
+          const intakeMemoriaisResultTemp = await runner.run(
+            intakeMemoriais,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...intakeMemoriaisResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!intakeMemoriaisResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const intakeMemoriaisResult = {
+            output_text: JSON.stringify(intakeMemoriaisResultTemp.finalOutput),
+            output_parsed: intakeMemoriaisResultTemp.finalOutput
+          };
+          const memoriaisPrepararBuscaQueryPackResultTemp = await runner.run(
+            memoriaisPrepararBuscaQueryPack,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...memoriaisPrepararBuscaQueryPackResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!memoriaisPrepararBuscaQueryPackResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const memoriaisPrepararBuscaQueryPackResult = {
+            output_text: JSON.stringify(memoriaisPrepararBuscaQueryPackResultTemp.finalOutput),
+            output_parsed: memoriaisPrepararBuscaQueryPackResultTemp.finalOutput
+          };
+          const filesearchResult = await runFileSearch(
+            "vs_69718130d25c8191b15e4317a3e0447a",
+            memoriaisPrepararBuscaQueryPackResult.output_parsed.consulta_pronta
+          );
+          conversationHistory.push({
+            role: "system",
+            content:
+              "RESULTADOS_FILE_SEARCH (memoriais):\n" +
+              JSON.stringify(filesearchResult, null, 2)
+          });
+          const memoriaisSelecionarEExtrairTrechosResultTemp = await runner.run(
+            memoriaisSelecionarEExtrairTrechos,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...memoriaisSelecionarEExtrairTrechosResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!memoriaisSelecionarEExtrairTrechosResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const memoriaisSelecionarEExtrairTrechosResult = {
+            output_text: JSON.stringify(memoriaisSelecionarEExtrairTrechosResultTemp.finalOutput),
+            output_parsed: memoriaisSelecionarEExtrairTrechosResultTemp.finalOutput
+          };
+          const saDaJsonMemoriaisResultTemp = await runner.run(
+            saDaJsonMemoriais,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...saDaJsonMemoriaisResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!saDaJsonMemoriaisResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const saDaJsonMemoriaisResult = {
+            output_text: JSON.stringify(saDaJsonMemoriaisResultTemp.finalOutput),
+            output_parsed: saDaJsonMemoriaisResultTemp.finalOutput
+          };
+        } else {
+          const agentColetarDadosMemoriaisPerguntaNicaResultTemp = await runner.run(
+            agentColetarDadosMemoriaisPerguntaNica,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...agentColetarDadosMemoriaisPerguntaNicaResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!agentColetarDadosMemoriaisPerguntaNicaResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const agentColetarDadosMemoriaisPerguntaNicaResult = {
+            output_text: agentColetarDadosMemoriaisPerguntaNicaResultTemp.finalOutput ?? ""
+          };
+        }
+      } else if (agenteClassificadorStageResult.output_parsed.category == "Recursos") {
+        const intakeRecursosConversacionalResultTemp = await runner.run(
+          intakeRecursosConversacional,
+          [
+            ...conversationHistory
+          ]
+        );
+        conversationHistory.push(...intakeRecursosConversacionalResultTemp.newItems.map((item) => item.rawItem));
+
+        if (!intakeRecursosConversacionalResultTemp.finalOutput) {
+            throw new Error("Agent result is undefined");
+        }
+
+        const intakeRecursosConversacionalResult = {
+          output_text: JSON.stringify(intakeRecursosConversacionalResultTemp.finalOutput),
+          output_parsed: intakeRecursosConversacionalResultTemp.finalOutput
+        };
+        if (intakeRecursosConversacionalResult.output_parsed.intake_completo == "sim") {
+          const intakeRecursosResultTemp = await runner.run(
+            intakeRecursos,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...intakeRecursosResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!intakeRecursosResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const intakeRecursosResult = {
+            output_text: JSON.stringify(intakeRecursosResultTemp.finalOutput),
+            output_parsed: intakeRecursosResultTemp.finalOutput
+          };
+          const recursosPrepararBuscaQueryPackResultTemp = await runner.run(
+            recursosPrepararBuscaQueryPack,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...recursosPrepararBuscaQueryPackResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!recursosPrepararBuscaQueryPackResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const recursosPrepararBuscaQueryPackResult = {
+            output_text: JSON.stringify(recursosPrepararBuscaQueryPackResultTemp.finalOutput),
+            output_parsed: recursosPrepararBuscaQueryPackResultTemp.finalOutput
+          };
+          const filesearchResult = await runFileSearch(
+            "vs_697128383c948191ae4731db3b8cf8cf",
+            recursosPrepararBuscaQueryPackResult.output_parsed.consulta_pronta
+          );
+          conversationHistory.push({
+            role: "system",
+            content:
+              "RESULTADOS_FILE_SEARCH (recursos):\n" +
+              JSON.stringify(filesearchResult, null, 2)
+          });
+          const recursosSelecionarEvidNciasResultTemp = await runner.run(
+            recursosSelecionarEvidNcias,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...recursosSelecionarEvidNciasResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!recursosSelecionarEvidNciasResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const recursosSelecionarEvidNciasResult = {
+            output_text: JSON.stringify(recursosSelecionarEvidNciasResultTemp.finalOutput),
+            output_parsed: recursosSelecionarEvidNciasResultTemp.finalOutput
+          };
+          const saDaJsonRecursosResultTemp = await runner.run(
+            saDaJsonRecursos,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...saDaJsonRecursosResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!saDaJsonRecursosResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const saDaJsonRecursosResult = {
+            output_text: JSON.stringify(saDaJsonRecursosResultTemp.finalOutput),
+            output_parsed: saDaJsonRecursosResultTemp.finalOutput
+          };
+        } else {
+          const agentColetarDadosRecursosPerguntaNicaResultTemp = await runner.run(
+            agentColetarDadosRecursosPerguntaNica,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...agentColetarDadosRecursosPerguntaNicaResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!agentColetarDadosRecursosPerguntaNicaResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const agentColetarDadosRecursosPerguntaNicaResult = {
+            output_text: agentColetarDadosRecursosPerguntaNicaResultTemp.finalOutput ?? ""
+          };
+        }
+      } else if (agenteClassificadorStageResult.output_parsed.category == "Contrarrazoes") {
+        const intakeContrarrazEsConversacionalResultTemp = await runner.run(
+          intakeContrarrazEsConversacional,
+          [
+            ...conversationHistory
+          ]
+        );
+        conversationHistory.push(...intakeContrarrazEsConversacionalResultTemp.newItems.map((item) => item.rawItem));
+
+        if (!intakeContrarrazEsConversacionalResultTemp.finalOutput) {
+            throw new Error("Agent result is undefined");
+        }
+
+        const intakeContrarrazEsConversacionalResult = {
+          output_text: JSON.stringify(intakeContrarrazEsConversacionalResultTemp.finalOutput),
+          output_parsed: intakeContrarrazEsConversacionalResultTemp.finalOutput
+        };
+        if (intakeContrarrazEsConversacionalResult.output_parsed.intake_completo == "sim") {
+          const intakeContrarrazEsResultTemp = await runner.run(
+            intakeContrarrazEs,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...intakeContrarrazEsResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!intakeContrarrazEsResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const intakeContrarrazEsResult = {
+            output_text: JSON.stringify(intakeContrarrazEsResultTemp.finalOutput),
+            output_parsed: intakeContrarrazEsResultTemp.finalOutput
+          };
+          const contrarrazEsPrepararBuscaQueryPackResultTemp = await runner.run(
+            contrarrazEsPrepararBuscaQueryPack,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...contrarrazEsPrepararBuscaQueryPackResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!contrarrazEsPrepararBuscaQueryPackResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const contrarrazEsPrepararBuscaQueryPackResult = {
+            output_text: JSON.stringify(contrarrazEsPrepararBuscaQueryPackResultTemp.finalOutput),
+            output_parsed: contrarrazEsPrepararBuscaQueryPackResultTemp.finalOutput
+          };
+          const filesearchResult = await runFileSearch(
+            "vs_69713067d3648191944078f1c0103dd1",
+            contrarrazEsPrepararBuscaQueryPackResult.output_parsed.consulta_pronta
+          );
+          conversationHistory.push({
+            role: "system",
+            content:
+              "RESULTADOS_FILE_SEARCH (contrarrazoes):\n" +
+              JSON.stringify(filesearchResult, null, 2)
+          });
+          const contrarrazEsSelecionarEvidNciasResultTemp = await runner.run(
+            contrarrazEsSelecionarEvidNcias,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...contrarrazEsSelecionarEvidNciasResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!contrarrazEsSelecionarEvidNciasResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const contrarrazEsSelecionarEvidNciasResult = {
+            output_text: JSON.stringify(contrarrazEsSelecionarEvidNciasResultTemp.finalOutput),
+            output_parsed: contrarrazEsSelecionarEvidNciasResultTemp.finalOutput
+          };
+          const saDaJsonContrarrazEsResultTemp = await runner.run(
+            saDaJsonContrarrazEs,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...saDaJsonContrarrazEsResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!saDaJsonContrarrazEsResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const saDaJsonContrarrazEsResult = {
+            output_text: JSON.stringify(saDaJsonContrarrazEsResultTemp.finalOutput),
+            output_parsed: saDaJsonContrarrazEsResultTemp.finalOutput
+          };
+        } else {
+          const agentColetarDadosContrarrazEsPerguntaNicaResultTemp = await runner.run(
+            agentColetarDadosContrarrazEsPerguntaNica,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...agentColetarDadosContrarrazEsPerguntaNicaResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!agentColetarDadosContrarrazEsPerguntaNicaResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const agentColetarDadosContrarrazEsPerguntaNicaResult = {
+            output_text: agentColetarDadosContrarrazEsPerguntaNicaResultTemp.finalOutput ?? ""
+          };
+        }
+      } else if (agenteClassificadorStageResult.output_parsed.category == "Cumprimento de Sentenca") {
+        const intakeCumprimentoDeSentenAConversacionalResultTemp = await runner.run(
+          intakeCumprimentoDeSentenAConversacional,
+          [
+            ...conversationHistory
+          ]
+        );
+        conversationHistory.push(...intakeCumprimentoDeSentenAConversacionalResultTemp.newItems.map((item) => item.rawItem));
+
+        if (!intakeCumprimentoDeSentenAConversacionalResultTemp.finalOutput) {
+            throw new Error("Agent result is undefined");
+        }
+
+        const intakeCumprimentoDeSentenAConversacionalResult = {
+          output_text: JSON.stringify(intakeCumprimentoDeSentenAConversacionalResultTemp.finalOutput),
+          output_parsed: intakeCumprimentoDeSentenAConversacionalResultTemp.finalOutput
+        };
+        if (intakeCumprimentoDeSentenAConversacionalResult.output_parsed.intake_completo == "sim") {
+          const intakeCumprimentoDeSentenAResultTemp = await runner.run(
+            intakeCumprimentoDeSentenA,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...intakeCumprimentoDeSentenAResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!intakeCumprimentoDeSentenAResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const intakeCumprimentoDeSentenAResult = {
+            output_text: JSON.stringify(intakeCumprimentoDeSentenAResultTemp.finalOutput),
+            output_parsed: intakeCumprimentoDeSentenAResultTemp.finalOutput
+          };
+          const cumprimentoDeSentenAPrepararBuscaQueryPackResultTemp = await runner.run(
+            cumprimentoDeSentenAPrepararBuscaQueryPack,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...cumprimentoDeSentenAPrepararBuscaQueryPackResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!cumprimentoDeSentenAPrepararBuscaQueryPackResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const cumprimentoDeSentenAPrepararBuscaQueryPackResult = {
+            output_text: JSON.stringify(cumprimentoDeSentenAPrepararBuscaQueryPackResultTemp.finalOutput),
+            output_parsed: cumprimentoDeSentenAPrepararBuscaQueryPackResultTemp.finalOutput
+          };
+          const filesearchResult = await runFileSearch(
+            "vs_69713a6681f481919c00eee7d69026d1",
+            cumprimentoDeSentenAPrepararBuscaQueryPackResult.output_parsed.consulta_pronta
+          );
+          conversationHistory.push({
+            role: "system",
+            content:
+              "RESULTADOS_FILE_SEARCH (cumprimento_sentenca):\n" +
+              JSON.stringify(filesearchResult, null, 2)
+          });
+          const cumprimentoDeSentenASelecionarEvidNciasResultTemp = await runner.run(
+            cumprimentoDeSentenASelecionarEvidNcias,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...cumprimentoDeSentenASelecionarEvidNciasResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!cumprimentoDeSentenASelecionarEvidNciasResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const cumprimentoDeSentenASelecionarEvidNciasResult = {
+            output_text: JSON.stringify(cumprimentoDeSentenASelecionarEvidNciasResultTemp.finalOutput),
+            output_parsed: cumprimentoDeSentenASelecionarEvidNciasResultTemp.finalOutput
+          };
+          const saDaJsonCumprimentoDeSentenAResultTemp = await runner.run(
+            saDaJsonCumprimentoDeSentenA,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...saDaJsonCumprimentoDeSentenAResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!saDaJsonCumprimentoDeSentenAResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const saDaJsonCumprimentoDeSentenAResult = {
+            output_text: JSON.stringify(saDaJsonCumprimentoDeSentenAResultTemp.finalOutput),
+            output_parsed: saDaJsonCumprimentoDeSentenAResultTemp.finalOutput
+          };
+        } else {
+          const agentColetarDadosCumprimentoDeSentenAPerguntaNicaResultTemp = await runner.run(
+            agentColetarDadosCumprimentoDeSentenAPerguntaNica,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...agentColetarDadosCumprimentoDeSentenAPerguntaNicaResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!agentColetarDadosCumprimentoDeSentenAPerguntaNicaResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const agentColetarDadosCumprimentoDeSentenAPerguntaNicaResult = {
+            output_text: agentColetarDadosCumprimentoDeSentenAPerguntaNicaResultTemp.finalOutput ?? ""
+          };
+        }
+      } else if (agenteClassificadorStageResult.output_parsed.category == "Peticoes Gerais") {
+        const intakePetiEsGeraisConversacionalResultTemp = await runner.run(
+          intakePetiEsGeraisConversacional,
+          [
+            ...conversationHistory
+          ]
+        );
+        conversationHistory.push(...intakePetiEsGeraisConversacionalResultTemp.newItems.map((item) => item.rawItem));
+
+        if (!intakePetiEsGeraisConversacionalResultTemp.finalOutput) {
+            throw new Error("Agent result is undefined");
+        }
+
+        const intakePetiEsGeraisConversacionalResult = {
+          output_text: JSON.stringify(intakePetiEsGeraisConversacionalResultTemp.finalOutput),
+          output_parsed: intakePetiEsGeraisConversacionalResultTemp.finalOutput
+        };
+        if (intakePetiEsGeraisConversacionalResult.output_parsed.intake_completo == "sim") {
+          const intakePetiEsGeraisResultTemp = await runner.run(
+            intakePetiEsGerais,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...intakePetiEsGeraisResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!intakePetiEsGeraisResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const intakePetiEsGeraisResult = {
+            output_text: JSON.stringify(intakePetiEsGeraisResultTemp.finalOutput),
+            output_parsed: intakePetiEsGeraisResultTemp.finalOutput
+          };
+          const petiEsGeraisPrepararBuscaQueryPackResultTemp = await runner.run(
+            petiEsGeraisPrepararBuscaQueryPack,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...petiEsGeraisPrepararBuscaQueryPackResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!petiEsGeraisPrepararBuscaQueryPackResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const petiEsGeraisPrepararBuscaQueryPackResult = {
+            output_text: JSON.stringify(petiEsGeraisPrepararBuscaQueryPackResultTemp.finalOutput),
+            output_parsed: petiEsGeraisPrepararBuscaQueryPackResultTemp.finalOutput
+          };
+          const filesearchResult = await runFileSearch(
+            "vs_69718200f9148191b85c707e239aa367",
+            petiEsGeraisPrepararBuscaQueryPackResult.output_parsed.consulta_pronta
+          );
+          conversationHistory.push({
+            role: "system",
+            content:
+              "RESULTADOS_FILE_SEARCH (peticoes_gerais):\n" +
+              JSON.stringify(filesearchResult, null, 2)
+          });
+          const petiEsGeraisSelecionarEvidNciasResultTemp = await runner.run(
+            petiEsGeraisSelecionarEvidNcias,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...petiEsGeraisSelecionarEvidNciasResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!petiEsGeraisSelecionarEvidNciasResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const petiEsGeraisSelecionarEvidNciasResult = {
+            output_text: JSON.stringify(petiEsGeraisSelecionarEvidNciasResultTemp.finalOutput),
+            output_parsed: petiEsGeraisSelecionarEvidNciasResultTemp.finalOutput
+          };
+          const saDaJsonPetiEsGeraisResultTemp = await runner.run(
+            saDaJsonPetiEsGerais,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...saDaJsonPetiEsGeraisResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!saDaJsonPetiEsGeraisResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const saDaJsonPetiEsGeraisResult = {
+            output_text: JSON.stringify(saDaJsonPetiEsGeraisResultTemp.finalOutput),
+            output_parsed: saDaJsonPetiEsGeraisResultTemp.finalOutput
+          };
+        } else {
+          const agentColetarDadosPetiEsGeraisPerguntaNicaResultTemp = await runner.run(
+            agentColetarDadosPetiEsGeraisPerguntaNica,
+            [
+              ...conversationHistory
+            ]
+          );
+          conversationHistory.push(...agentColetarDadosPetiEsGeraisPerguntaNicaResultTemp.newItems.map((item) => item.rawItem));
+
+          if (!agentColetarDadosPetiEsGeraisPerguntaNicaResultTemp.finalOutput) {
+              throw new Error("Agent result is undefined");
+          }
+
+          const agentColetarDadosPetiEsGeraisPerguntaNicaResult = {
+            output_text: agentColetarDadosPetiEsGeraisPerguntaNicaResultTemp.finalOutput ?? ""
+          };
+        }
       } else {
-        const fallbackSeguranAResultTemp = await run(
-          fallbackSeguranA,
+        const agentElseResultTemp = await runner.run(
+          agentElse,
           [
             ...conversationHistory
           ]
         );
-        appendNewItemsToHistory(fallbackSeguranAResultTemp.newItems);
+        conversationHistory.push(...agentElseResultTemp.newItems.map((item) => item.rawItem));
 
-        if (!fallbackSeguranAResultTemp.finalOutput) {
+        if (!agentElseResultTemp.finalOutput) {
             throw new Error("Agent result is undefined");
         }
 
-        const fallbackSeguranAResult = {
-          output_text: fallbackSeguranAResultTemp.finalOutput ?? ""
+        const agentElseResult = {
+          output_text: agentElseResultTemp.finalOutput ?? ""
         };
       }
+    } else if (classifyUserIntentResult.output_parsed.intent == "revisar_existente") {
+      const intakeRevisarAlgoExistenteResultTemp = await runner.run(
+        intakeRevisarAlgoExistente,
+        [
+          ...conversationHistory
+        ]
+      );
+      conversationHistory.push(...intakeRevisarAlgoExistenteResultTemp.newItems.map((item) => item.rawItem));
+
+      if (!intakeRevisarAlgoExistenteResultTemp.finalOutput) {
+          throw new Error("Agent result is undefined");
       }
+
+      const intakeRevisarAlgoExistenteResult = {
+        output_text: intakeRevisarAlgoExistenteResultTemp.finalOutput ?? ""
+      };
+    } else if (classifyUserIntentResult.output_parsed.intent == "pesquisar_jurisprudencia") {
+      const intakePesquisarJurisprudNciaResultTemp = await runner.run(
+        intakePesquisarJurisprudNcia,
+        [
+          ...conversationHistory
+        ]
+      );
+      conversationHistory.push(...intakePesquisarJurisprudNciaResultTemp.newItems.map((item) => item.rawItem));
+
+      if (!intakePesquisarJurisprudNciaResultTemp.finalOutput) {
+          throw new Error("Agent result is undefined");
+      }
+
+      const intakePesquisarJurisprudNciaResult = {
+        output_text: intakePesquisarJurisprudNciaResultTemp.finalOutput ?? ""
+      };
+    } else if (classifyUserIntentResult.output_parsed.intent == "duvida_aberta") {
+      const perguntaGeralSResponderResultTemp = await runner.run(
+        perguntaGeralSResponder,
+        [
+          ...conversationHistory
+        ]
+      );
+      conversationHistory.push(...perguntaGeralSResponderResultTemp.newItems.map((item) => item.rawItem));
+
+      if (!perguntaGeralSResponderResultTemp.finalOutput) {
+          throw new Error("Agent result is undefined");
+      }
+
+      const perguntaGeralSResponderResult = {
+        output_text: perguntaGeralSResponderResultTemp.finalOutput ?? ""
+      };
+    } else {
+      const fallbackSeguranAResultTemp = await runner.run(
+        fallbackSeguranA,
+        [
+          ...conversationHistory
+        ]
+      );
+      conversationHistory.push(...fallbackSeguranAResultTemp.newItems.map((item) => item.rawItem));
+
+      if (!fallbackSeguranAResultTemp.finalOutput) {
+          throw new Error("Agent result is undefined");
+      }
+
+      const fallbackSeguranAResult = {
+        output_text: fallbackSeguranAResultTemp.finalOutput ?? ""
+      };
     }
-    const finalOutput = lastFinalOutput ?? { error: "no_output", message: "Workflow did not return output." };
-    return ensureNonEmptySections(finalOutput, workflow.input_as_text);
   });
 }

@@ -329,8 +329,7 @@ fastify.post<{ Body: RunBody }>("/run", async (request, reply) => {
 
   try {
     const result = await runWorkflow({
-      ...parsed.data,
-      attachments
+      input_as_text: parsed.data.input_as_text
     });
     reply.send(normalizeFinalJson(result));
   } catch (err: any) {
@@ -516,10 +515,8 @@ fastify.post<{ Body: RunBody }>("/run-stream", async (request, reply) => {
       ...parsed.data,
       attachments
     };
-    const result = await runWorkflow(workflowInput, {
-      onStatus: (phase, message) => {
-        sendEvent("status", { phase, message });
-      }
+    const result = await runWorkflow({
+      input_as_text: workflowInput.input_as_text
     });
     const normalized = normalizeFinalJson(result);
 
