@@ -7298,7 +7298,20 @@ Nenhum texto fora do JSON.`,
   }
 });
 
-type WorkflowInput = { input_as_text: string };
+type WorkflowProgressEvent = {
+  kind: "node_started" | "node_running" | "node_completed" | "node_failed";
+  node: string;
+  step: number;
+  elapsed_ms?: number;
+  duration_ms?: number;
+  message?: string;
+};
+
+type WorkflowInput = {
+  input_as_text: string;
+  onProgress?: (event: WorkflowProgressEvent) => void;
+  progressIntervalMs?: number;
+};
 
 
 // Main code entrypoint
@@ -7317,12 +7330,56 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
       }
     });
     let lastFinalOutput: unknown = undefined;
+    let stepCounter = 0;
     const runStep = async (...args: any[]) => {
-      const res = await (runner.run as any)(...args);
-      if (res?.finalOutput !== undefined) {
-        lastFinalOutput = res.finalOutput;
+      const step = ++stepCounter;
+      const nodeName =
+        (typeof args?.[0]?.name === "string" && args[0].name.trim()) ||
+        (typeof args?.[0]?.id === "string" && args[0].id.trim()) ||
+        `node_${step}`;
+      const startedAt = Date.now();
+      const emitProgress = workflow.onProgress;
+      emitProgress?.({
+        kind: "node_started",
+        node: nodeName,
+        step,
+        message: `Executando ${nodeName}`
+      });
+      const heartbeatMs = Math.max(2000, workflow.progressIntervalMs ?? 5000);
+      const heartbeat = setInterval(() => {
+        emitProgress?.({
+          kind: "node_running",
+          node: nodeName,
+          step,
+          elapsed_ms: Date.now() - startedAt,
+          message: `Processando ${nodeName}`
+        });
+      }, heartbeatMs);
+      try {
+        const res = await (runner.run as any)(...args);
+        if (res?.finalOutput !== undefined) {
+          lastFinalOutput = res.finalOutput;
+        }
+        emitProgress?.({
+          kind: "node_completed",
+          node: nodeName,
+          step,
+          duration_ms: Date.now() - startedAt,
+          message: `Concluido ${nodeName}`
+        });
+        return res;
+      } catch (error: any) {
+        emitProgress?.({
+          kind: "node_failed",
+          node: nodeName,
+          step,
+          duration_ms: Date.now() - startedAt,
+          message: error?.message ?? `Falha em ${nodeName}`
+        });
+        throw error;
+      } finally {
+        clearInterval(heartbeat);
       }
-      return res;
     };
     const runFileSearch = async (vectorStoreId: string, query: string) => {
       const data = (await client.vectorStores.search(vectorStoreId, {

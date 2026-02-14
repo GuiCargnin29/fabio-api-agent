@@ -516,7 +516,51 @@ fastify.post<{ Body: RunBody }>("/run-stream", async (request, reply) => {
       attachments
     };
     const result = await runWorkflow({
-      input_as_text: workflowInput.input_as_text
+      input_as_text: workflowInput.input_as_text,
+      progressIntervalMs: 5000,
+      onProgress: (event) => {
+        if (closed) return;
+        if (event.kind === "node_started") {
+          sendEvent("status", {
+            phase: "node_started",
+            node: event.node,
+            step: event.step,
+            message: event.message ?? `Executando ${event.node}`
+          });
+          return;
+        }
+        if (event.kind === "node_running") {
+          sendEvent("status", {
+            phase: "node_running",
+            node: event.node,
+            step: event.step,
+            elapsed_ms: event.elapsed_ms ?? 0,
+            message:
+              event.message ??
+              `Processando ${event.node} (${Math.max(1, Math.floor((event.elapsed_ms ?? 0) / 1000))}s)`
+          });
+          return;
+        }
+        if (event.kind === "node_completed") {
+          sendEvent("status", {
+            phase: "node_completed",
+            node: event.node,
+            step: event.step,
+            duration_ms: event.duration_ms ?? 0,
+            message: event.message ?? `Concluido ${event.node}`
+          });
+          return;
+        }
+        if (event.kind === "node_failed") {
+          sendEvent("status", {
+            phase: "node_failed",
+            node: event.node,
+            step: event.step,
+            duration_ms: event.duration_ms ?? 0,
+            message: event.message ?? `Falha em ${event.node}`
+          });
+        }
+      }
     });
     const normalized = normalizeFinalJson(result);
 
