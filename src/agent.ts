@@ -7316,6 +7316,14 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
         workflow_id: "wf_697147dea01c8190be93c53b8e96c71a0761ebadd0470529"
       }
     });
+    let lastFinalOutput: unknown = undefined;
+    const runStep = async (...args: any[]) => {
+      const res = await (runner.run as any)(...args);
+      if (res?.finalOutput !== undefined) {
+        lastFinalOutput = res.finalOutput;
+      }
+      return res;
+    };
     const runFileSearch = async (vectorStoreId: string, query: string) => {
       const data = (await client.vectorStores.search(vectorStoreId, {
         query: query || "",
@@ -7343,7 +7351,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
         };
       });
     };
-    const classifyUserIntentResultTemp = await runner.run(
+    const classifyUserIntentResultTemp = await runStep(
       classifyUserIntent,
       [
         ...conversationHistory
@@ -7360,7 +7368,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
       output_parsed: classifyUserIntentResultTemp.finalOutput
     };
     if (classifyUserIntentResult.output_parsed.intent == "criar_novo") {
-      const agenteClassificadorStageResultTemp = await runner.run(
+      const agenteClassificadorStageResultTemp = await runStep(
         agenteClassificadorStage,
         [
           ...conversationHistory
@@ -7377,7 +7385,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
         output_parsed: agenteClassificadorStageResultTemp.finalOutput
       };
       if (agenteClassificadorStageResult.output_parsed.category == "Iniciais") {
-        const intakeIniciaisConversationalResultTemp = await runner.run(
+        const intakeIniciaisConversationalResultTemp = await runStep(
           intakeIniciaisConversational,
           [
             ...conversationHistory
@@ -7394,7 +7402,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
           output_parsed: intakeIniciaisConversationalResultTemp.finalOutput
         };
         if (intakeIniciaisConversationalResult.output_parsed.intake_completo == "sim") {
-          const intakeIniciaisResultTemp = await runner.run(
+          const intakeIniciaisResultTemp = await runStep(
             intakeIniciais,
             [
               ...conversationHistory
@@ -7410,7 +7418,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             output_text: JSON.stringify(intakeIniciaisResultTemp.finalOutput),
             output_parsed: intakeIniciaisResultTemp.finalOutput
           };
-          const iniciaisPrepararBuscaQueryPackResultTemp = await runner.run(
+          const iniciaisPrepararBuscaQueryPackResultTemp = await runStep(
             iniciaisPrepararBuscaQueryPack,
             [
               ...conversationHistory
@@ -7436,7 +7444,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               "RESULTADOS_FILE_SEARCH (iniciais):\n" +
               JSON.stringify(filesearchResult, null, 2)
           });
-          const iniciaisSelecionarEExtrairTrechosResultTemp = await runner.run(
+          const iniciaisSelecionarEExtrairTrechosResultTemp = await runStep(
             iniciaisSelecionarEExtrairTrechos,
             [
               ...conversationHistory
@@ -7452,7 +7460,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             output_text: JSON.stringify(iniciaisSelecionarEExtrairTrechosResultTemp.finalOutput),
             output_parsed: iniciaisSelecionarEExtrairTrechosResultTemp.finalOutput
           };
-          const saDaJsonIniciaisResultTemp = await runner.run(
+          const saDaJsonIniciaisResultTemp = await runStep(
             saDaJsonIniciais,
             [
               ...conversationHistory
@@ -7469,7 +7477,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             output_parsed: saDaJsonIniciaisResultTemp.finalOutput
           };
         } else {
-          const agentColetarDadosIniciaisPerguntaNicaResultTemp = await runner.run(
+          const agentColetarDadosIniciaisPerguntaNicaResultTemp = await runStep(
             agentColetarDadosIniciaisPerguntaNica,
             [
               ...conversationHistory
@@ -7486,7 +7494,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
           };
         }
       } else if (agenteClassificadorStageResult.output_parsed.category == "Contestacao") {
-        const intakeContestaOConversacionalResultTemp = await runner.run(
+        const intakeContestaOConversacionalResultTemp = await runStep(
           intakeContestaOConversacional,
           [
             ...conversationHistory
@@ -7503,7 +7511,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
           output_parsed: intakeContestaOConversacionalResultTemp.finalOutput
         };
         if (intakeContestaOConversacionalResult.output_parsed.intake_completo == "sim") {
-          const intakeContestaOResultTemp = await runner.run(
+          const intakeContestaOResultTemp = await runStep(
             intakeContestaO,
             [
               ...conversationHistory
@@ -7519,7 +7527,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             output_text: JSON.stringify(intakeContestaOResultTemp.finalOutput),
             output_parsed: intakeContestaOResultTemp.finalOutput
           };
-          const contestaOPrepararBuscaQueryPackResultTemp = await runner.run(
+          const contestaOPrepararBuscaQueryPackResultTemp = await runStep(
             contestaOPrepararBuscaQueryPack,
             [
               ...conversationHistory
@@ -7545,7 +7553,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               "RESULTADOS_FILE_SEARCH (contestacao):\n" +
               JSON.stringify(filesearchResult, null, 2)
           });
-          const contestaOExtrairTemplateResultTemp = await runner.run(
+          const contestaOExtrairTemplateResultTemp = await runStep(
             contestaOExtrairTemplate,
             [
               ...conversationHistory
@@ -7561,7 +7569,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             output_text: JSON.stringify(contestaOExtrairTemplateResultTemp.finalOutput),
             output_parsed: contestaOExtrairTemplateResultTemp.finalOutput
           };
-          const saDaJsonContestaOResultTemp = await runner.run(
+          const saDaJsonContestaOResultTemp = await runStep(
             saDaJsonContestaO,
             [
               ...conversationHistory
@@ -7578,7 +7586,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             output_parsed: saDaJsonContestaOResultTemp.finalOutput
           };
         } else {
-          const agentColetarDadosContestaOPerguntaNicaResultTemp = await runner.run(
+          const agentColetarDadosContestaOPerguntaNicaResultTemp = await runStep(
             agentColetarDadosContestaOPerguntaNica,
             [
               ...conversationHistory
@@ -7595,7 +7603,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
           };
         }
       } else if (agenteClassificadorStageResult.output_parsed.category == "Replica") {
-        const intakeRPlicaConversacionalResultTemp = await runner.run(
+        const intakeRPlicaConversacionalResultTemp = await runStep(
           intakeRPlicaConversacional,
           [
             ...conversationHistory
@@ -7612,7 +7620,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
           output_parsed: intakeRPlicaConversacionalResultTemp.finalOutput
         };
         if (intakeRPlicaConversacionalResult.output_parsed.intake_completo == "sim") {
-          const intakeRPlicaResultTemp = await runner.run(
+          const intakeRPlicaResultTemp = await runStep(
             intakeRPlica,
             [
               ...conversationHistory
@@ -7628,7 +7636,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             output_text: JSON.stringify(intakeRPlicaResultTemp.finalOutput),
             output_parsed: intakeRPlicaResultTemp.finalOutput
           };
-          const rPlicaPrepararBuscaQueryPackResultTemp = await runner.run(
+          const rPlicaPrepararBuscaQueryPackResultTemp = await runStep(
             rPlicaPrepararBuscaQueryPack,
             [
               ...conversationHistory
@@ -7654,7 +7662,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               "RESULTADOS_FILE_SEARCH (replica):\n" +
               JSON.stringify(filesearchResult, null, 2)
           });
-          const rPlicaSelecionarEvidNciasResultTemp = await runner.run(
+          const rPlicaSelecionarEvidNciasResultTemp = await runStep(
             rPlicaSelecionarEvidNcias,
             [
               ...conversationHistory
@@ -7670,7 +7678,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             output_text: JSON.stringify(rPlicaSelecionarEvidNciasResultTemp.finalOutput),
             output_parsed: rPlicaSelecionarEvidNciasResultTemp.finalOutput
           };
-          const saDaJsonRPlicaResultTemp = await runner.run(
+          const saDaJsonRPlicaResultTemp = await runStep(
             saDaJsonRPlica,
             [
               ...conversationHistory
@@ -7687,7 +7695,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             output_parsed: saDaJsonRPlicaResultTemp.finalOutput
           };
         } else {
-          const agentColetarDadosRPlicaPerguntaNicaResultTemp = await runner.run(
+          const agentColetarDadosRPlicaPerguntaNicaResultTemp = await runStep(
             agentColetarDadosRPlicaPerguntaNica,
             [
               ...conversationHistory
@@ -7704,7 +7712,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
           };
         }
       } else if (agenteClassificadorStageResult.output_parsed.category == "Memoriais") {
-        const intakeMemoriaisConversacionalResultTemp = await runner.run(
+        const intakeMemoriaisConversacionalResultTemp = await runStep(
           intakeMemoriaisConversacional,
           [
             ...conversationHistory
@@ -7721,7 +7729,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
           output_parsed: intakeMemoriaisConversacionalResultTemp.finalOutput
         };
         if (intakeMemoriaisConversacionalResult.output_parsed.intake_completo == "sim") {
-          const intakeMemoriaisResultTemp = await runner.run(
+          const intakeMemoriaisResultTemp = await runStep(
             intakeMemoriais,
             [
               ...conversationHistory
@@ -7737,7 +7745,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             output_text: JSON.stringify(intakeMemoriaisResultTemp.finalOutput),
             output_parsed: intakeMemoriaisResultTemp.finalOutput
           };
-          const memoriaisPrepararBuscaQueryPackResultTemp = await runner.run(
+          const memoriaisPrepararBuscaQueryPackResultTemp = await runStep(
             memoriaisPrepararBuscaQueryPack,
             [
               ...conversationHistory
@@ -7763,7 +7771,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               "RESULTADOS_FILE_SEARCH (memoriais):\n" +
               JSON.stringify(filesearchResult, null, 2)
           });
-          const memoriaisSelecionarEExtrairTrechosResultTemp = await runner.run(
+          const memoriaisSelecionarEExtrairTrechosResultTemp = await runStep(
             memoriaisSelecionarEExtrairTrechos,
             [
               ...conversationHistory
@@ -7779,7 +7787,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             output_text: JSON.stringify(memoriaisSelecionarEExtrairTrechosResultTemp.finalOutput),
             output_parsed: memoriaisSelecionarEExtrairTrechosResultTemp.finalOutput
           };
-          const saDaJsonMemoriaisResultTemp = await runner.run(
+          const saDaJsonMemoriaisResultTemp = await runStep(
             saDaJsonMemoriais,
             [
               ...conversationHistory
@@ -7796,7 +7804,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             output_parsed: saDaJsonMemoriaisResultTemp.finalOutput
           };
         } else {
-          const agentColetarDadosMemoriaisPerguntaNicaResultTemp = await runner.run(
+          const agentColetarDadosMemoriaisPerguntaNicaResultTemp = await runStep(
             agentColetarDadosMemoriaisPerguntaNica,
             [
               ...conversationHistory
@@ -7813,7 +7821,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
           };
         }
       } else if (agenteClassificadorStageResult.output_parsed.category == "Recursos") {
-        const intakeRecursosConversacionalResultTemp = await runner.run(
+        const intakeRecursosConversacionalResultTemp = await runStep(
           intakeRecursosConversacional,
           [
             ...conversationHistory
@@ -7830,7 +7838,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
           output_parsed: intakeRecursosConversacionalResultTemp.finalOutput
         };
         if (intakeRecursosConversacionalResult.output_parsed.intake_completo == "sim") {
-          const intakeRecursosResultTemp = await runner.run(
+          const intakeRecursosResultTemp = await runStep(
             intakeRecursos,
             [
               ...conversationHistory
@@ -7846,7 +7854,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             output_text: JSON.stringify(intakeRecursosResultTemp.finalOutput),
             output_parsed: intakeRecursosResultTemp.finalOutput
           };
-          const recursosPrepararBuscaQueryPackResultTemp = await runner.run(
+          const recursosPrepararBuscaQueryPackResultTemp = await runStep(
             recursosPrepararBuscaQueryPack,
             [
               ...conversationHistory
@@ -7872,7 +7880,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               "RESULTADOS_FILE_SEARCH (recursos):\n" +
               JSON.stringify(filesearchResult, null, 2)
           });
-          const recursosSelecionarEvidNciasResultTemp = await runner.run(
+          const recursosSelecionarEvidNciasResultTemp = await runStep(
             recursosSelecionarEvidNcias,
             [
               ...conversationHistory
@@ -7888,7 +7896,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             output_text: JSON.stringify(recursosSelecionarEvidNciasResultTemp.finalOutput),
             output_parsed: recursosSelecionarEvidNciasResultTemp.finalOutput
           };
-          const saDaJsonRecursosResultTemp = await runner.run(
+          const saDaJsonRecursosResultTemp = await runStep(
             saDaJsonRecursos,
             [
               ...conversationHistory
@@ -7905,7 +7913,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             output_parsed: saDaJsonRecursosResultTemp.finalOutput
           };
         } else {
-          const agentColetarDadosRecursosPerguntaNicaResultTemp = await runner.run(
+          const agentColetarDadosRecursosPerguntaNicaResultTemp = await runStep(
             agentColetarDadosRecursosPerguntaNica,
             [
               ...conversationHistory
@@ -7922,7 +7930,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
           };
         }
       } else if (agenteClassificadorStageResult.output_parsed.category == "Contrarrazoes") {
-        const intakeContrarrazEsConversacionalResultTemp = await runner.run(
+        const intakeContrarrazEsConversacionalResultTemp = await runStep(
           intakeContrarrazEsConversacional,
           [
             ...conversationHistory
@@ -7939,7 +7947,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
           output_parsed: intakeContrarrazEsConversacionalResultTemp.finalOutput
         };
         if (intakeContrarrazEsConversacionalResult.output_parsed.intake_completo == "sim") {
-          const intakeContrarrazEsResultTemp = await runner.run(
+          const intakeContrarrazEsResultTemp = await runStep(
             intakeContrarrazEs,
             [
               ...conversationHistory
@@ -7955,7 +7963,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             output_text: JSON.stringify(intakeContrarrazEsResultTemp.finalOutput),
             output_parsed: intakeContrarrazEsResultTemp.finalOutput
           };
-          const contrarrazEsPrepararBuscaQueryPackResultTemp = await runner.run(
+          const contrarrazEsPrepararBuscaQueryPackResultTemp = await runStep(
             contrarrazEsPrepararBuscaQueryPack,
             [
               ...conversationHistory
@@ -7981,7 +7989,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               "RESULTADOS_FILE_SEARCH (contrarrazoes):\n" +
               JSON.stringify(filesearchResult, null, 2)
           });
-          const contrarrazEsSelecionarEvidNciasResultTemp = await runner.run(
+          const contrarrazEsSelecionarEvidNciasResultTemp = await runStep(
             contrarrazEsSelecionarEvidNcias,
             [
               ...conversationHistory
@@ -7997,7 +8005,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             output_text: JSON.stringify(contrarrazEsSelecionarEvidNciasResultTemp.finalOutput),
             output_parsed: contrarrazEsSelecionarEvidNciasResultTemp.finalOutput
           };
-          const saDaJsonContrarrazEsResultTemp = await runner.run(
+          const saDaJsonContrarrazEsResultTemp = await runStep(
             saDaJsonContrarrazEs,
             [
               ...conversationHistory
@@ -8014,7 +8022,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             output_parsed: saDaJsonContrarrazEsResultTemp.finalOutput
           };
         } else {
-          const agentColetarDadosContrarrazEsPerguntaNicaResultTemp = await runner.run(
+          const agentColetarDadosContrarrazEsPerguntaNicaResultTemp = await runStep(
             agentColetarDadosContrarrazEsPerguntaNica,
             [
               ...conversationHistory
@@ -8031,7 +8039,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
           };
         }
       } else if (agenteClassificadorStageResult.output_parsed.category == "Cumprimento de Sentenca") {
-        const intakeCumprimentoDeSentenAConversacionalResultTemp = await runner.run(
+        const intakeCumprimentoDeSentenAConversacionalResultTemp = await runStep(
           intakeCumprimentoDeSentenAConversacional,
           [
             ...conversationHistory
@@ -8048,7 +8056,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
           output_parsed: intakeCumprimentoDeSentenAConversacionalResultTemp.finalOutput
         };
         if (intakeCumprimentoDeSentenAConversacionalResult.output_parsed.intake_completo == "sim") {
-          const intakeCumprimentoDeSentenAResultTemp = await runner.run(
+          const intakeCumprimentoDeSentenAResultTemp = await runStep(
             intakeCumprimentoDeSentenA,
             [
               ...conversationHistory
@@ -8064,7 +8072,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             output_text: JSON.stringify(intakeCumprimentoDeSentenAResultTemp.finalOutput),
             output_parsed: intakeCumprimentoDeSentenAResultTemp.finalOutput
           };
-          const cumprimentoDeSentenAPrepararBuscaQueryPackResultTemp = await runner.run(
+          const cumprimentoDeSentenAPrepararBuscaQueryPackResultTemp = await runStep(
             cumprimentoDeSentenAPrepararBuscaQueryPack,
             [
               ...conversationHistory
@@ -8090,7 +8098,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               "RESULTADOS_FILE_SEARCH (cumprimento_sentenca):\n" +
               JSON.stringify(filesearchResult, null, 2)
           });
-          const cumprimentoDeSentenASelecionarEvidNciasResultTemp = await runner.run(
+          const cumprimentoDeSentenASelecionarEvidNciasResultTemp = await runStep(
             cumprimentoDeSentenASelecionarEvidNcias,
             [
               ...conversationHistory
@@ -8106,7 +8114,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             output_text: JSON.stringify(cumprimentoDeSentenASelecionarEvidNciasResultTemp.finalOutput),
             output_parsed: cumprimentoDeSentenASelecionarEvidNciasResultTemp.finalOutput
           };
-          const saDaJsonCumprimentoDeSentenAResultTemp = await runner.run(
+          const saDaJsonCumprimentoDeSentenAResultTemp = await runStep(
             saDaJsonCumprimentoDeSentenA,
             [
               ...conversationHistory
@@ -8123,7 +8131,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             output_parsed: saDaJsonCumprimentoDeSentenAResultTemp.finalOutput
           };
         } else {
-          const agentColetarDadosCumprimentoDeSentenAPerguntaNicaResultTemp = await runner.run(
+          const agentColetarDadosCumprimentoDeSentenAPerguntaNicaResultTemp = await runStep(
             agentColetarDadosCumprimentoDeSentenAPerguntaNica,
             [
               ...conversationHistory
@@ -8140,7 +8148,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
           };
         }
       } else if (agenteClassificadorStageResult.output_parsed.category == "Peticoes Gerais") {
-        const intakePetiEsGeraisConversacionalResultTemp = await runner.run(
+        const intakePetiEsGeraisConversacionalResultTemp = await runStep(
           intakePetiEsGeraisConversacional,
           [
             ...conversationHistory
@@ -8157,7 +8165,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
           output_parsed: intakePetiEsGeraisConversacionalResultTemp.finalOutput
         };
         if (intakePetiEsGeraisConversacionalResult.output_parsed.intake_completo == "sim") {
-          const intakePetiEsGeraisResultTemp = await runner.run(
+          const intakePetiEsGeraisResultTemp = await runStep(
             intakePetiEsGerais,
             [
               ...conversationHistory
@@ -8173,7 +8181,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             output_text: JSON.stringify(intakePetiEsGeraisResultTemp.finalOutput),
             output_parsed: intakePetiEsGeraisResultTemp.finalOutput
           };
-          const petiEsGeraisPrepararBuscaQueryPackResultTemp = await runner.run(
+          const petiEsGeraisPrepararBuscaQueryPackResultTemp = await runStep(
             petiEsGeraisPrepararBuscaQueryPack,
             [
               ...conversationHistory
@@ -8199,7 +8207,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
               "RESULTADOS_FILE_SEARCH (peticoes_gerais):\n" +
               JSON.stringify(filesearchResult, null, 2)
           });
-          const petiEsGeraisSelecionarEvidNciasResultTemp = await runner.run(
+          const petiEsGeraisSelecionarEvidNciasResultTemp = await runStep(
             petiEsGeraisSelecionarEvidNcias,
             [
               ...conversationHistory
@@ -8215,7 +8223,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             output_text: JSON.stringify(petiEsGeraisSelecionarEvidNciasResultTemp.finalOutput),
             output_parsed: petiEsGeraisSelecionarEvidNciasResultTemp.finalOutput
           };
-          const saDaJsonPetiEsGeraisResultTemp = await runner.run(
+          const saDaJsonPetiEsGeraisResultTemp = await runStep(
             saDaJsonPetiEsGerais,
             [
               ...conversationHistory
@@ -8232,7 +8240,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
             output_parsed: saDaJsonPetiEsGeraisResultTemp.finalOutput
           };
         } else {
-          const agentColetarDadosPetiEsGeraisPerguntaNicaResultTemp = await runner.run(
+          const agentColetarDadosPetiEsGeraisPerguntaNicaResultTemp = await runStep(
             agentColetarDadosPetiEsGeraisPerguntaNica,
             [
               ...conversationHistory
@@ -8249,7 +8257,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
           };
         }
       } else {
-        const agentElseResultTemp = await runner.run(
+        const agentElseResultTemp = await runStep(
           agentElse,
           [
             ...conversationHistory
@@ -8266,7 +8274,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
         };
       }
     } else if (classifyUserIntentResult.output_parsed.intent == "revisar_existente") {
-      const intakeRevisarAlgoExistenteResultTemp = await runner.run(
+      const intakeRevisarAlgoExistenteResultTemp = await runStep(
         intakeRevisarAlgoExistente,
         [
           ...conversationHistory
@@ -8282,7 +8290,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
         output_text: intakeRevisarAlgoExistenteResultTemp.finalOutput ?? ""
       };
     } else if (classifyUserIntentResult.output_parsed.intent == "pesquisar_jurisprudencia") {
-      const intakePesquisarJurisprudNciaResultTemp = await runner.run(
+      const intakePesquisarJurisprudNciaResultTemp = await runStep(
         intakePesquisarJurisprudNcia,
         [
           ...conversationHistory
@@ -8298,7 +8306,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
         output_text: intakePesquisarJurisprudNciaResultTemp.finalOutput ?? ""
       };
     } else if (classifyUserIntentResult.output_parsed.intent == "duvida_aberta") {
-      const perguntaGeralSResponderResultTemp = await runner.run(
+      const perguntaGeralSResponderResultTemp = await runStep(
         perguntaGeralSResponder,
         [
           ...conversationHistory
@@ -8314,7 +8322,7 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
         output_text: perguntaGeralSResponderResultTemp.finalOutput ?? ""
       };
     } else {
-      const fallbackSeguranAResultTemp = await runner.run(
+      const fallbackSeguranAResultTemp = await runStep(
         fallbackSeguranA,
         [
           ...conversationHistory
@@ -8330,5 +8338,11 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
         output_text: fallbackSeguranAResultTemp.finalOutput ?? ""
       };
     }
+
+    if (lastFinalOutput === undefined) {
+      throw new Error("Workflow completed without final output");
+    }
+
+    return lastFinalOutput;
   });
 }

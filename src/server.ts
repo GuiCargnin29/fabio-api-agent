@@ -556,8 +556,8 @@ fastify.get<{ Params: { id: string } }>("/jobs/:id", async (request, reply) => {
   }
 
   // Normalize just before returning so clients always see the standardized fecho
-  if (job.status === "done" && job.result) {
-    reply.send({ ...job, result: normalizeFinalJson(job.result) });
+  if (job.status === "done") {
+    reply.send({ ...job, result: normalizeFinalJson(job.result ?? "") });
     return;
   }
   reply.send(job);
