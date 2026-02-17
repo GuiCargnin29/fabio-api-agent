@@ -7317,8 +7317,11 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
         const isFinalJsonNode = typeof agentName === "string" && agentName.startsWith("Saída JSON -");
         const normalizedFinalOutput =
           isFinalJsonNode ? ensureNonEmptyFinalDocument(currentOutput, workflow.input_as_text) : currentOutput;
-        res.finalOutput = normalizedFinalOutput;
         lastFinalOutput = normalizedFinalOutput;
+        return {
+          ...res,
+          finalOutput: normalizedFinalOutput
+        };
       }
       return res;
     };
