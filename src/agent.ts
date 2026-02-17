@@ -7312,9 +7312,135 @@ export const runWorkflow = async (workflow: WorkflowInput) => {
     const runStep = async (...args: any[]) => {
       const res = await (runner.run as any)(...args);
       if (res?.finalOutput !== undefined) {
-        lastFinalOutput = res.finalOutput;
+        const currentOutput = res.finalOutput as any;
+        const agentName = args?.[0]?.name;
+        const isFinalJsonNode = typeof agentName === "string" && agentName.startsWith("Saída JSON -");
+        const normalizedFinalOutput =
+          isFinalJsonNode ? ensureNonEmptyFinalDocument(currentOutput, workflow.input_as_text) : currentOutput;
+        res.finalOutput = normalizedFinalOutput;
+        lastFinalOutput = normalizedFinalOutput;
       }
       return res;
+    };
+    const buildParagraphBlock = (blockId: string, text: string) => ({
+      block_id: blockId,
+      type: "paragraph" as const,
+      text,
+      ordered: false,
+      items: [] as string[],
+      rows: [] as string[][],
+      source: ""
+    });
+    const ensureNonEmptyFinalDocument = (output: any, rawInputText: string) => {
+      const hasUsableSections =
+        Array.isArray(output?.doc?.sections) &&
+        output.doc.sections.some((section: any) => Array.isArray(section?.blocks) && section.blocks.length > 0);
+
+      if (hasUsableSections) {
+        return output;
+      }
+
+      const docType = typeof output?.doc_type === "string" ? output.doc_type : "peticoes_gerais";
+      const fallbackTitleByType: Record<string, string> = {
+        iniciais: "PETIÇÃO INICIAL",
+        contestacao: "CONTESTAÇÃO",
+        replica: "RÉPLICA",
+        memoriais: "MEMORIAIS",
+        recursos: "RECURSO",
+        contrarrazoes: "CONTRARRAZÕES",
+        cumprimento_de_sentenca: "CUMPRIMENTO DE SENTENÇA",
+        peticoes_gerais: "PETIÇÃO"
+      };
+      const fallbackTitle = fallbackTitleByType[docType] ?? "PETIÇÃO";
+      const teseCentral =
+        typeof output?.meta?.tese_central === "string" && output.meta.tese_central.trim().length > 0
+          ? output.meta.tese_central.trim()
+          : "Síntese a ser preenchida com os fatos principais do caso.";
+      const estrategia =
+        typeof output?.meta?.estrategia === "string" && output.meta.estrategia.trim().length > 0
+          ? output.meta.estrategia.trim()
+          : "Fundamentação e estratégia a serem detalhadas conforme o caso concreto.";
+      const inputExcerpt = String(rawInputText ?? "").trim().slice(0, 1500);
+
+      const baseSections = [
+        {
+          ordem: 1,
+          titulo_literal: "Endereçamento",
+          blocks: [buildParagraphBlock("enderecamento", "[PREENCHER: juízo competente]")]
+        },
+        {
+          ordem: 2,
+          titulo_literal: "Partes e Identificação",
+          blocks: [
+            buildParagraphBlock(
+              "partes_polos",
+              "[PREENCHER: qualificação completa das partes e dados de identificação processual]"
+            )
+          ]
+        },
+        {
+          ordem: 3,
+          titulo_literal: "Síntese Fática",
+          blocks: [
+            buildParagraphBlock(
+              "sintese_fatica",
+              `${teseCentral}\n\nResumo do input do usuário:\n${inputExcerpt || "[PREENCHER: resumo fático]"}`
+            )
+          ]
+        },
+        {
+          ordem: 4,
+          titulo_literal: "Fundamentação Jurídica",
+          blocks: [buildParagraphBlock("fundamentacao_juridica", estrategia)]
+        },
+        {
+          ordem: 5,
+          titulo_literal: "Pedidos",
+          blocks: [
+            buildParagraphBlock(
+              "pedidos_finais",
+              "[PREENCHER: pedidos principais e subsidiários, incluindo citação/intimação e demais requerimentos]"
+            )
+          ]
+        },
+        {
+          ordem: 6,
+          titulo_literal: "Provas",
+          blocks: [buildParagraphBlock("provas", "[PREENCHER: especificar documentos e demais meios de prova]")]
+        },
+        {
+          ordem: 7,
+          titulo_literal: "Fecho",
+          blocks: [
+            buildParagraphBlock(
+              "fecho",
+              "Nesses termos, pede deferimento.\n[PREENCHER: cidade], [PREENCHER: data].\n[PREENCHER: assinatura/OAB]"
+            )
+          ]
+        }
+      ];
+
+      const existingWarnings = Array.isArray(output?.meta?.warnings) ? output.meta.warnings : [];
+      const fallbackWarnings = [
+        "[FALLBACK AUTOMÁTICO: template não identificado no material retornado; peça base montada com dados de intake para evitar resposta vazia.]",
+        ...existingWarnings
+      ];
+
+      return {
+        ...output,
+        doc: {
+          ...output?.doc,
+          title:
+            typeof output?.doc?.title === "string" && output.doc.title.trim().length > 0
+              ? output.doc.title
+              : fallbackTitle,
+          sections: baseSections
+        },
+        meta: {
+          ...output?.meta,
+          warnings: fallbackWarnings
+        }
+      };
     };
     const extractFileSearchExcerpt = (result: any): string => {
       const parts: string[] = [];
